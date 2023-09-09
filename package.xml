@@ -9,13 +9,12 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>mavros</depend>
+  <!-- <depend>mavros</depend> -->
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>EIGEN3</depend>
+  <depend>eigen</depend>
   <depend>eigen3_cmake_module</depend>
-  <depend>mavros</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
