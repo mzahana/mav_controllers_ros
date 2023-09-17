@@ -13,6 +13,36 @@ find_package(nav_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/TargetCommand.msg"
+  DEPENDENCIES std_msgs builtin_interfaces geometry_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+)
+
+#
+# SE3controller.cpp
+#
+add_library(se3controller src/SE3Controller.cpp)
+ament_target_dependencies(se3controller Eigen3)
+# this line to exports the library
+ament_export_targets(se3controller HAS_LIBRARY_TARGET)
+target_include_directories(se3controller
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${EIGEN3_INCLUDE_DIR}
+    )
+
+
+install(
+  TARGETS se3controller
+  EXPORT se3controller
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

@@ -2,6 +2,7 @@
 #define SE3CONTROLLER_H
 
 #include <Eigen/Geometry>
+// #include <Eigen/Dense>
 
 class SE3Controller
 {

@@ -156,7 +156,7 @@ const Eigen::Vector3f &SE3Controller::getComputedAngularVelocity()
   return angular_velocity_;
 }
 
-void SO3Control::resetIntegrals()
+void SE3Controller::resetIntegrals()
 {
   pos_int_ = Eigen::Vector3f::Zero();
   pos_int_b_ = Eigen::Vector3f::Zero();
