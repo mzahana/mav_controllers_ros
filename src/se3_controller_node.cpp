@@ -10,6 +10,8 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include "mavros_msgs/msg/attitude_target.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -32,15 +34,33 @@ public:
   // EIGEN_MAKE_ALIGNED_OPERATOR_NEW;  // Need this since we have SO3Control which needs aligned pointer
 
 private:
-  void publishSO3Command();
-  void odom_callback(const nav_msgs::msg::Odometry & msg);
-  // void enable_motors_callback(const std_msgs::Bool::ConstPtr &msg); // @todo Make it a service!1
+  // void enable_motors_callback(const std_msgs::Bool::ConstPtr &msg); // @todo Make it a service!
   // void corrections_callback(const kr_mav_msgs::Corrections::ConstPtr &msg); // Maybe we don't need it!! 
   // void cfg_callback(kr_mav_controllers::SO3Config &config, uint32_t level); // @todo Need to adapt to ros2
   
-  // Callbacks
-  void target_cmd_callback(const px4_geometric_controller::msg::TargetCommand & msg);// @todo change to suitable ros2 message
-  void odom_callback(const nav_msgs::msg::Odometry & msg);
+ 
+  /*
+  @brief Publish SE3 command to the flight controller
+  */
+  void publishSE3Command();
+
+  /*
+  @brief Publish SE3 command to mavros topic. This is callaed by publishSE3Command()
+  */
+  void publishMavrosSetpoint();
+
+  /*
+  @brief ROS callback to receive setpoints of the SE2 controller
+  @param msg px4_geometric_controller::msg::TargetCommand
+  */
+  void targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg);
+
+  /*
+  @brief Odometry ROS callback to receive linear and rotational measurements
+  @param msg nav_msgs::msg::Odometry
+  */
+  void odomCallback(const nav_msgs::msg::Odometry & msg);
+
   // void imu_callback(const sensor_msgs::Imu::ConstPtr &pose); /* No need ?!*/
 
   /*Publishers */
@@ -98,10 +118,105 @@ position_cmd_updated_(false),
         current_orientation_(Eigen::Quaternionf::Identity())
 {
   /* Get params */
+  this->declare_parameter("mass", 0.5);
+  mass_ = this->get_parameter("mass").get_parameter_value().get<float>();
+  controller_.setMass(mass_);
+  controller_.setGravity(g_);
+
+  this->declare_parameter("use_external_yaw", true);
+  use_external_yaw_ = this->get_parameter("use_external_yaw").get_parameter_value().get<bool>();
+
+  this->declare_parameter("gains/pos/x", 7.4f);
+  config_kx_[0] = this->get_parameter("gains/pos/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/pos/y", 7.4f);
+  config_kx_[1] = this->get_parameter("gains/pos/y").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/pos/z", 10.4f);
+  config_kx_[2] = this->get_parameter("gains/pos/z").get_parameter_value().get<float>();
+
+  kx_[0] = config_kx_[0];
+  kx_[1] = config_kx_[1];
+  kx_[2] = config_kx_[2];
+
+  this->declare_parameter("gains/vel/x", 4.8f);
+  config_kv_[0] = this->get_parameter("gains/vel/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/vel/y", 4.8f);
+  config_kv_[1] = this->get_parameter("gains/vel/y").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/vel/z", 6.0f);
+  config_kv_[2] = this->get_parameter("gains/vel/z").get_parameter_value().get<float>();
+
+  kv_[0] = config_kv_[0];
+  kv_[1] = config_kv_[1];
+  kv_[2] = config_kv_[2];
+
+  this->declare_parameter("gains/ki/x", 0.0f);
+  config_ki_[0] = this->get_parameter("gains/ki/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/ki/y", 0.0f);
+  config_ki_[1] = this->get_parameter("gains/ki/y").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/ki/z", 0.0f);
+  config_ki_[2] = this->get_parameter("gains/ki/z").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/kib/x", 0.0f);
+  config_kib_[0] = this->get_parameter("gains/kib/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/kib/y", 0.0f);
+  config_kib_[1] = this->get_parameter("gains/kib/y").get_parameter_value().get<float>();
+  
+  this->declare_parameter("gains/kib/z", 0.0f);
+  config_kib_[2] = this->get_parameter("gains/kib/z").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/rot/x", 1.5f);
+  kR_[0] = this->get_parameter("gains/rot/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/rot/y", 1.5f);
+  kR_[1] = this->get_parameter("gains/rot/y").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/rot/z", 1.0f);
+  kR_[2] = this->get_parameter("gains/rot/z").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/ang/x", 0.13f);
+  kOm_[0] = this->get_parameter("gains/ang/x").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/ang/y", 0.13f);
+  kOm_[1] = this->get_parameter("gains/ang/y").get_parameter_value().get<float>();
+
+  this->declare_parameter("gains/ang/z", 0.1f);
+  kOm_[2] = this->get_parameter("gains/ang/z").get_parameter_value().get<float>();
+
+  float max_pos_int, max_pos_int_b;
+  this->declare_parameter("max_pos_int", 0.5f);
+  max_pos_int = this->get_parameter("max_pos_int").get_parameter_value().get<float>();
+  this->declare_parameter("mas_pos_int_b", 0.5f);
+  max_pos_int_b = this->get_parameter("mas_pos_int_b").get_parameter_value().get<float>();
+
+  controller_.setMaxIntegral(max_pos_int);
+  controller_.setMaxIntegralBody(max_pos_int_b);
+
+  float max_tilt_angle;
+  this->declare_parameter("max_tilt_angle", static_cast<float>(M_PI));
+  max_tilt_angle = this->get_parameter("max_tilt_angle").get_parameter_value().get<float>();
+  controller_.setMaxTiltAngle(max_tilt_angle);
+
+
+  controller_.resetIntegrals();
 
   /* Define subscribers and publishers */
 
-  controller_.resetIntegrals();
+  se3_command_pub_ = this->create_publisher<px4_geometric_controller::msg::SE3Command>("se3controller/cmd", 10);
+  attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
+  odom_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/odom_pose", 10);
+  command_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/cmd_pose", 10);
+
+  target_cmd_sub_ = this->create_subscription<px4_geometric_controller::msg::TargetCommand>(
+      "se3controller/setpoint", 10, std::bind(&SE3ControllerToMAVROS::targetCmdCallback, this, _1));
+
+  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      "se3controller/odom", 10, std::bind(&SE3ControllerToMAVROS::odomCallback, this, _1));
 }
 
 SE3ControllerToMAVROS::~SE3ControllerToMAVROS()
@@ -110,7 +225,73 @@ SE3ControllerToMAVROS::~SE3ControllerToMAVROS()
 }
 
 void
-SE3ControllerToMAVROS::publishSO3Command()
+SE3ControllerToMAVROS::odomCallback(const nav_msgs::msg::Odometry & msg)
+{
+  have_odom_ = true;
+
+  frame_id_ = msg.header.frame_id;
+
+  const Eigen::Vector3f position(msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z);
+  const Eigen::Vector3f velocity(msg.twist.twist.linear.x, msg.twist.twist.linear.y, msg.twist.twist.linear.z);
+
+  tf2::Quaternion q(
+        msg.pose.pose.orientation.x,
+        msg.pose.pose.orientation.y,
+        msg.pose.pose.orientation.z,
+        msg.pose.pose.orientation.w
+    );
+  
+  double roll, pitch, yaw;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+  current_yaw_ = yaw;
+
+  current_orientation_ = Eigen::Quaternionf(msg.pose.pose.orientation.w, msg.pose.pose.orientation.x,
+                                            msg.pose.pose.orientation.y, msg.pose.pose.orientation.z);
+
+  controller_.setPosition(position);
+  controller_.setVelocity(velocity);
+  controller_.setCurrentOrientation(current_orientation_);
+
+  // if(position_cmd_init_)
+  // {
+  //   // We set position_cmd_updated_ = false and expect that the
+  //   // position_cmd_callback would set it to true since typically a position_cmd
+  //   // message would follow an odom message. If not, the position_cmd_callback
+  //   // hasn't been called and we publish the so3 command ourselves
+  //   // TODO: Fallback to hover if position_cmd hasn't been received for some time
+  //   if(!position_cmd_updated_)
+  //     publishSO3Command();
+  //   position_cmd_updated_ = false;
+  // }
+}
+
+void
+SE3ControllerToMAVROS::targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg)
+{
+  des_pos_ = Eigen::Vector3f(msg.position.x, msg.position.y, msg.position.z);
+  des_vel_ = Eigen::Vector3f(msg.velocity.x, msg.velocity.y, msg.velocity.z);
+  des_acc_ = Eigen::Vector3f(msg.acceleration.x, msg.acceleration.y, msg.acceleration.z);
+  des_jrk_ = Eigen::Vector3f(msg.jerk.x, msg.jerk.y, msg.jerk.z);
+
+  // Check use_msg_gains_flag to decide whether to use gains from the msg or config
+  kx_[0] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_POSITION_X) ? msg.kx[0] : config_kx_[0];
+  kx_[1] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_POSITION_Y) ? msg.kx[1] : config_kx_[1];
+  kx_[2] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_POSITION_Z) ? msg.kx[2] : config_kx_[2];
+  kv_[0] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_VELOCITY_X) ? msg.kv[0] : config_kv_[0];
+  kv_[1] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_VELOCITY_Y) ? msg.kv[1] : config_kv_[1];
+  kv_[2] = (msg.use_msg_gains_flags & msg.USE_MSG_GAINS_VELOCITY_Z) ? msg.kv[2] : config_kv_[2];
+
+  des_yaw_ = msg.yaw;
+  des_yaw_dot_ = msg.yaw_dot;
+  position_cmd_updated_ = true;
+  // position_cmd_init_ = true;
+
+  publishSE3Command();
+}
+
+
+void
+SE3ControllerToMAVROS::publishSE3Command()
 {
   if(!have_odom_)
   {
@@ -175,6 +356,13 @@ SE3ControllerToMAVROS::publishSO3Command()
   command_viz_pub_->publish(cmd_viz_msg);
   
   // @todo publish to mavros
+  publishMavrosSetpoint();
+}
+
+void
+SE3ControllerToMAVROS::publishMavrosSetpoint()
+{
+
 }
 
 /**
