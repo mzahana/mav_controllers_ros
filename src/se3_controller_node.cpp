@@ -25,11 +25,11 @@ using std::placeholders::_1;
  * We should not publish commands if there is no odom
 */
 
-class SE3ControllerToMAVROS: public rclcpp::Node
+class SE3ControllerNode: public rclcpp::Node
 {
 public:
-  SE3ControllerToMAVROS();
-  ~SE3ControllerToMAVROS();
+  SE3ControllerNode();
+  ~SE3ControllerNode();
 
   // EIGEN_MAKE_ALIGNED_OPERATOR_NEW;  // Need this since we have SO3Control which needs aligned pointer
 
@@ -43,12 +43,6 @@ private:
   @brief Publish SE3 command to the flight controller
   */
   void publishSE3Command();
-
-  /*
-  @brief Publish SE3 command to mavros topic. This is callaed by publishSE3Command()
-  */
-  void publishMavrosSetpoint();
-
   /*
   @brief ROS callback to receive setpoints of the SE2 controller
   @param msg px4_geometric_controller::msg::TargetCommand
@@ -65,7 +59,6 @@ private:
 
   /*Publishers */
   rclcpp::Publisher<px4_geometric_controller::msg::SE3Command>::SharedPtr se3_command_pub_;
-  rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr attitude_raw_pub_; // publisher to mavros setpoints
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  odom_pose_pub_;  // For sending PoseStamped to firmware ??
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  command_viz_pub_; // cmd visulaization in RViz2
 
@@ -105,7 +98,7 @@ private:
 };
 
 //////////////// Class definitions ////////////////
-SE3ControllerToMAVROS::SE3ControllerToMAVROS(): Node("se3_controller_to_mavros_node"),
+SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
 position_cmd_updated_(false),
         position_cmd_init_(false),
         des_yaw_(0),
@@ -208,24 +201,23 @@ position_cmd_updated_(false),
   /* Define subscribers and publishers */
 
   se3_command_pub_ = this->create_publisher<px4_geometric_controller::msg::SE3Command>("se3controller/cmd", 10);
-  attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
   odom_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/odom_pose", 10);
   command_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/cmd_pose", 10);
 
   target_cmd_sub_ = this->create_subscription<px4_geometric_controller::msg::TargetCommand>(
-      "se3controller/setpoint", 10, std::bind(&SE3ControllerToMAVROS::targetCmdCallback, this, _1));
+      "se3controller/setpoint", 10, std::bind(&SE3ControllerNode::targetCmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "se3controller/odom", 10, std::bind(&SE3ControllerToMAVROS::odomCallback, this, _1));
+      "se3controller/odom", 10, std::bind(&SE3ControllerNode::odomCallback, this, _1));
 }
 
-SE3ControllerToMAVROS::~SE3ControllerToMAVROS()
+SE3ControllerNode::~SE3ControllerNode()
 {
-
+  /* Destructor */
 }
 
 void
-SE3ControllerToMAVROS::odomCallback(const nav_msgs::msg::Odometry & msg)
+SE3ControllerNode::odomCallback(const nav_msgs::msg::Odometry & msg)
 {
   have_odom_ = true;
 
@@ -266,7 +258,7 @@ SE3ControllerToMAVROS::odomCallback(const nav_msgs::msg::Odometry & msg)
 }
 
 void
-SE3ControllerToMAVROS::targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg)
+SE3ControllerNode::targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg)
 {
   des_pos_ = Eigen::Vector3f(msg.position.x, msg.position.y, msg.position.z);
   des_vel_ = Eigen::Vector3f(msg.velocity.x, msg.velocity.y, msg.velocity.z);
@@ -291,7 +283,7 @@ SE3ControllerToMAVROS::targetCmdCallback(const px4_geometric_controller::msg::Ta
 
 
 void
-SE3ControllerToMAVROS::publishSE3Command()
+SE3ControllerNode::publishSE3Command()
 {
   if(!have_odom_)
   {
@@ -354,15 +346,6 @@ SE3ControllerToMAVROS::publishSE3Command()
   cmd_viz_msg.pose.orientation.z = orientation.z();
   cmd_viz_msg.pose.orientation.w = orientation.w();
   command_viz_pub_->publish(cmd_viz_msg);
-  
-  // @todo publish to mavros
-  publishMavrosSetpoint();
-}
-
-void
-SE3ControllerToMAVROS::publishMavrosSetpoint()
-{
-
 }
 
 /**
@@ -372,7 +355,7 @@ SE3ControllerToMAVROS::publishMavrosSetpoint()
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SE3ControllerToMAVROS>());
+  rclcpp::spin(std::make_shared<SE3ControllerNode>());
   rclcpp::shutdown();
   return 0;
 }
