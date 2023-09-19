@@ -66,7 +66,9 @@ private:
   bool odom_set_, imu_set_, so3_cmd_set_;
   Eigen::Quaterniond odom_q_, imu_q_;
   double kf_, lin_cof_a_, lin_int_b_; // need to check if they are needed
-  int num_props_;
+  int num_props_; // probably not needed
+
+  double max_thrust_; // Maximum thrust of all motors (N). This will be used to normalize the setoint thrust to [0,1]
 
   double se3_cmd_timeout_;
   rclcpp::Time last_se3_cmd_time_;
@@ -118,6 +120,23 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
   if(kf_ <= 0)
   {
     RCLCPP_ERROR(this->get_logger(), "kf must be > 0");
+    return;
+  }
+
+  // max_thrust
+  if (!this->has_parameter("max_thrust"))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Must set max_thrust param for thrust scaling. Normalized total thrust = total_thrust/max_total_thrust");
+  }
+  else
+  {
+    // Get the parameter value if it exists
+    this->get_parameter("max_thrust", max_thrust_);
+    RCLCPP_INFO(this->get_logger(), "Using max_thrust=%g so that prop speed = sqrt(f / num_props / kf) to scale force to speed.", max_thrust_);
+  }
+  if(max_thrust_ <= 0)
+  {
+    RCLCPP_ERROR(this->get_logger(), "max_thrust must be > 0");
     return;
   }
 
@@ -235,10 +254,13 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
   double throttle = f_des(0) * R_cur(0, 2) + f_des(1) * R_cur(1, 2) + f_des(2) * R_cur(2, 2);
 
   // Scale force to individual rotor velocities (rad/s).
-  throttle = std::sqrt(throttle / num_props_ / kf_);
+  // throttle = std::sqrt(throttle / num_props_ / kf_);
 
   // Scaling from rotor velocity (rad/s) to att_throttle for pixhawk
-  throttle = lin_cof_a_ * throttle + lin_int_b_;
+  // throttle = lin_cof_a_ * throttle + lin_int_b_;
+
+  // normalize using the maximum thrust by all motors
+  throttle = throttle/max_thrust_;
 
   // failsafe for the error in traj_gen that can lead to nan values
   //prevents throttle from being sent to 1 if it is nan.
