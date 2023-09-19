@@ -126,13 +126,13 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
   // max_thrust
   if (!this->has_parameter("max_thrust"))
   {
-    RCLCPP_ERROR(this->get_logger(), "Must set max_thrust param for thrust scaling. Normalized total thrust = total_thrust/max_total_thrust");
+    RCLCPP_ERROR(this->get_logger(), "Must set max_thrust param for thrust scaling. Normalized px4 thrust = total_thrust/max_thrust");
   }
   else
   {
     // Get the parameter value if it exists
     this->get_parameter("max_thrust", max_thrust_);
-    RCLCPP_INFO(this->get_logger(), "Using max_thrust=%g so that prop speed = sqrt(f / num_props / kf) to scale force to speed.", max_thrust_);
+    RCLCPP_INFO(this->get_logger(), "Using max_thrust=%g so that Normalized px4 thrust = total_thrust/max_thrust.", max_thrust_);
   }
   if(max_thrust_ <= 0)
   {
@@ -279,7 +279,7 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
   // publish messages
   mavros_msgs::msg::AttitudeTarget setpoint_msg;
   setpoint_msg.header = msg.header;
-  setpoint_msg.type_mask = 0; // @todo !!!!!! Set the correct type_mask !!!!!!
+  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE; // @todo !!!!!! Set the correct type_mask !!!!!!
   setpoint_msg.orientation.w = q_des_transformed.w();
   setpoint_msg.orientation.x = q_des_transformed.x();
   setpoint_msg.orientation.y = q_des_transformed.y();
