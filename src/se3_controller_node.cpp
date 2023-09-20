@@ -11,7 +11,7 @@
 #include "mavros_msgs/msg/attitude_target.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <std_msgs/msg/bool.hpp>
 
 using namespace std::chrono_literals;
@@ -78,8 +78,13 @@ private:
   
   SE3Controller controller_; /* SE3 controller object */
 
+  Eigen::Vector3f des_pos_, des_vel_, des_acc_, des_jrk_, config_kx_, config_kv_, config_ki_, config_kib_, kx_, kv_;
+  float des_yaw_, des_yaw_dot_;
+  float current_yaw_;
+  Eigen::Quaternionf current_orientation_;
+  
   /* flags */
-  bool odom_set_, imu_set_, so3_cmd_set_, position_cmd_updated_, position_cmd_init_; 
+  bool   position_cmd_updated_, position_cmd_init_; 
   bool enable_motors_, use_external_yaw_, have_odom_;
 
   Eigen::Quaterniond odom_q_, imu_q_;
@@ -93,29 +98,27 @@ private:
   
   std::string frame_id_; /* of the command */
 
-  Eigen::Vector3f des_pos_, des_vel_, des_acc_, des_jrk_, config_kx_, config_kv_, config_ki_, config_kib_, kx_, kv_;
-  float des_yaw_, des_yaw_dot_;
-  float current_yaw_;
-  Eigen::Quaternionf current_orientation_;
+  
   
   /* drone-specific params */
   float kR_[3], kOm_[3], corrections_[3];
   float mass_;
+
   const float g_;
 };
 
 //////////////// Class definitions ////////////////
 SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
-position_cmd_updated_(false),
-        position_cmd_init_(false),
         des_yaw_(0),
         des_yaw_dot_(0),
         current_yaw_(0),
+        current_orientation_(Eigen::Quaternionf::Identity()),
+        position_cmd_updated_(false),
+        position_cmd_init_(false),
         enable_motors_(false),
         use_external_yaw_(false),
         have_odom_(false),
-        g_(9.81),
-        current_orientation_(Eigen::Quaternionf::Identity())
+        g_(9.81)
 {
   /* Get params */
   this->declare_parameter("mass", 0.5);

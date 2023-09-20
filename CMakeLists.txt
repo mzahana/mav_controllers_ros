@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(px4_geometric_controller)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-dev)
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # find dependencies
@@ -49,6 +49,62 @@ install(
   RUNTIME DESTINATION bin
   INCLUDES DESTINATION include
 )
+
+#
+# SE3 controller node
+#
+add_executable(se3_controller_node src/se3_controller_node.cpp)
+ament_target_dependencies(se3_controller_node
+                          nav_msgs
+                          geometry_msgs
+                          mavros_msgs
+                          tf2
+                          tf2_ros 
+                          tf2_geometry_msgs 
+                          rclcpp 
+                          Eigen3)
+
+target_link_libraries(se3_controller_node se3controller)
+target_include_directories(se3_controller_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_target_interfaces(se3_controller_node
+${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+install(TARGETS
+  se3_controller_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+
+#
+# SE3 controller MAVROS node
+#
+add_executable(se3controller_mavros_node src/se3controller_mavros_node.cpp)
+ament_target_dependencies(se3controller_mavros_node
+                          nav_msgs
+                          geometry_msgs
+                          mavros_msgs
+                          tf2
+                          tf2_ros 
+                          tf2_geometry_msgs 
+                          rclcpp 
+                          Eigen3)
+
+# target_link_libraries(se3_controller_node se3controller)
+target_include_directories(se3controller_mavros_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_target_interfaces(se3controller_mavros_node
+${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+install(TARGETS
+  se3controller_mavros_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+###########################
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

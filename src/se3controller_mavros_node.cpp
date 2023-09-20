@@ -12,7 +12,7 @@
 #include "mavros_msgs/msg/attitude_target.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "tf2/LinearMath/Quaternion.h"
 #include <sensor_msgs/msg/imu.hpp>
 #include "mavros_msgs/msg/state.hpp"
@@ -52,11 +52,6 @@ private:
   @param msg mavros_msgs::msg::State
   */
  void mavrosStateCallback(const mavros_msgs::msg::State & msg);
-
-  /*
-  @brief Publish SE3 command to mavros topic.
-  */
-  void publishMavrosSetpoint();
 
   /*
   @brief Publish motors arming state to SE3 controller node
@@ -341,8 +336,14 @@ SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
   }
 }
 
-void
-SE3ControllerToMavros::publishMavrosSetpoint()
-{
+/**
+ * Main function
+*/
 
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<SE3ControllerToMavros>());
+  rclcpp::shutdown();
+  return 0;
 }
