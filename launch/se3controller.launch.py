@@ -25,10 +25,15 @@ def generate_launch_description():
     # Define the node
     se3controller_node = Node(
         package='px4_geometric_controller',
-        executable='se3_controller_node',
-        name='se3_controller_node',
+        executable='se3controller_node',
+        name='se3controller_node',
         output='screen',
         parameters=[LaunchConfiguration('yaml_path')],
+        remappings=[
+            ('se3controller/setpoint', 'se3controller/setpoint'),
+            ('se3controller/odom', '/mavros/local_position/odom'),
+            ('se3controller/enable_motors', 'se3controller/enable_motors')
+        ]
     )
 
     return LaunchDescription([

@@ -1,4 +1,4 @@
-se3controller_node:
+/se3controller_node:
   ros__parameters:
     mass: 0.5
     use_external_yaw: true

@@ -53,8 +53,8 @@ install(
 #
 # SE3 controller node
 #
-add_executable(se3_controller_node src/se3_controller_node.cpp)
-ament_target_dependencies(se3_controller_node
+add_executable(se3controller_node src/se3_controller_node.cpp)
+ament_target_dependencies(se3controller_node
                           nav_msgs
                           geometry_msgs
                           mavros_msgs
@@ -64,17 +64,17 @@ ament_target_dependencies(se3_controller_node
                           rclcpp 
                           Eigen3)
 
-target_link_libraries(se3_controller_node se3controller)
-target_include_directories(se3_controller_node
+target_link_libraries(se3controller_node se3controller)
+target_include_directories(se3controller_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(se3_controller_node ${cpp_typesupport_target})
+target_link_libraries(se3controller_node ${cpp_typesupport_target})
 
 
 install(TARGETS
-  se3_controller_node
+se3controller_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

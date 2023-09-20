@@ -61,6 +61,7 @@ private:
   rclcpp::Subscription<px4_geometric_controller::msg::SE3Command>::SharedPtr se3_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_sub_;
 
   rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr attitude_raw_pub_; // publisher for mavros setpoints
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motors_state_pub_;
@@ -87,14 +88,17 @@ private:
 /////////////////////////////////////////////////////
 // Class definition //
 /////////////////////////////////////////////////////
-SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_node")
+SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node")
 {
+  RCLCPP_INFO(this->get_logger(), "Node namespace: %s", this->get_namespace());
+  RCLCPP_INFO(this->get_logger(), "Node name: %s", this->get_name());
+
   // num_props
+  this->declare_parameter<int>("num_props");
   if (!this->has_parameter("num_props"))
   {
-    RCLCPP_ERROR(this->get_logger(), "Parameter 'num_props' was not set!");
-    // You can also throw an exception or set a default value here
-    // throw std::runtime_error("Parameter 'my_param' was not set!");
+    RCLCPP_FATAL(this->get_logger(), "Parameter 'num_props' was not set!");
+    throw std::runtime_error("Parameter 'num_props' was not set!");
   }
   else
   {
@@ -104,14 +108,16 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
   }
   if(num_props_ <= 0)
   {
-    RCLCPP_ERROR(this->get_logger(), "num_props must be > 0");
-    return;
+    RCLCPP_FATAL(this->get_logger(), "num_props must be > 0");
+    throw std::runtime_error("num_props must be > 0");
   }
 
   // kf
+  this->declare_parameter<double>("kf");
   if (!this->has_parameter("kf"))
   {
-    RCLCPP_ERROR(this->get_logger(), "Must set kf param for thrust scaling. Motor speed = sqrt(thrust / num_props / kf)");
+    RCLCPP_FATAL(this->get_logger(), "Must set kf param for thrust scaling. Motor speed = sqrt(thrust / num_props / kf)");
+    throw std::runtime_error("Must set kf param for thrust scaling. Motor speed = sqrt(thrust / num_props / kf)");
   }
   else
   {
@@ -121,38 +127,47 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
   }
   if(kf_ <= 0)
   {
-    RCLCPP_ERROR(this->get_logger(), "kf must be > 0");
+    RCLCPP_FATAL(this->get_logger(), "kf must be > 0");
+    throw std::runtime_error("kf must be > 0");
     return;
   }
 
   // max_thrust
+  this->declare_parameter<double>("max_thrust");
   if (!this->has_parameter("max_thrust"))
   {
-    RCLCPP_ERROR(this->get_logger(), "Must set max_thrust param for thrust scaling. Normalized px4 thrust = total_thrust/max_thrust");
+    RCLCPP_FATAL(this->get_logger(), "Must set max_thrust param for thrust scaling. Normalized px4 thrust = total_thrust/max_thrust");
+    throw std::runtime_error("Must set max_thrust param for thrust scaling. Normalized px4 thrust = total_thrust/max_thrust");
   }
   else
   {
     // Get the parameter value if it exists
     this->get_parameter("max_thrust", max_thrust_);
-    RCLCPP_INFO(this->get_logger(), "Using max_thrust=%g so that Normalized px4 thrust = total_thrust/max_thrust.", max_thrust_);
+    RCLCPP_INFO(this->get_logger(), "Using max_thrust=%g N so that Normalized px4 thrust = total_thrust/%g.", max_thrust_, max_thrust_);
   }
   if(max_thrust_ <= 0)
   {
-    RCLCPP_ERROR(this->get_logger(), "max_thrust must be > 0");
+    RCLCPP_FATAL(this->get_logger(), "max_thrust must be > 0");
+    throw std::runtime_error("max_thrust must be > 0");
     return;
   }
 
   // lin_cof_a AND lin_int_b
+  this->declare_parameter<double>("lin_cof_a");
+  this->declare_parameter<double>("lin_int_b");
   if (this->has_parameter("lin_cof_a") && this->has_parameter("lin_int_b"))
   {
+    this->get_parameter("lin_cof_a", lin_cof_a_);
+    this->get_parameter("lin_int_b", lin_int_b_);
     RCLCPP_INFO(this->get_logger(), "Using %g*x + %g to scale prop speed to att_throttle.", lin_cof_a_, lin_int_b_);
   }
   else
   {
-    RCLCPP_ERROR(this->get_logger(), "Must set coefficients for thrust scaling (scaling from rotor "
+    RCLCPP_FATAL(this->get_logger(), "Must set coefficients for thrust scaling (scaling from rotor "
               "velocity (rad/s) to att_throttle for pixhawk)");
     
-      
+    throw std::runtime_error("Must set coefficients for thrust scaling (scaling from rotor "
+              "velocity (rad/s) to att_throttle for pixhawk)");
   }
 
 
@@ -175,10 +190,13 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
     "se3controller/cmd", 10, std::bind(&SE3ControllerToMavros::se3CmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-    "odom", 10, std::bind(&SE3ControllerToMavros::odomCallback, this, _1));
+    "se3controller_mavros/odom", 10, std::bind(&SE3ControllerToMavros::odomCallback, this, _1));
   
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
-    "imu", 10, std::bind(&SE3ControllerToMavros::imuCallback, this, _1));
+    "se3controller_mavros/imu", 10, std::bind(&SE3ControllerToMavros::imuCallback, this, _1));
+
+  mavros_state_sub_ = this->create_subscription<mavros_msgs::msg::State>(
+    "mavros/state", 10, std::bind(&SE3ControllerToMavros::mavrosStateCallback, this, _1));
 }
 
 SE3ControllerToMavros::~SE3ControllerToMavros()
