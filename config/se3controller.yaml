@@ -1,0 +1,32 @@
+se3controller_node:
+  ros__parameters:
+    mass: 0.5
+    use_external_yaw: true
+    gains:
+      pos:
+        x: 7.4
+        y: 7.4
+        z: 10.4
+      vel:
+        x: 4.8
+        y: 4.8
+        z: 6.0
+      ki:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+      kib:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+      rot:
+        x: 1.5
+        y: 1.5
+        z: 1.0
+      ang:
+        x: 0.13
+        y: 0.13
+        z: 0.1
+    max_pos_int: 0.5
+    mas_pos_int_b: 0.5
+    max_tilt_angle: 3.141592653589793  # This is pi in decimal form

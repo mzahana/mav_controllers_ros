@@ -69,8 +69,9 @@ target_include_directories(se3_controller_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-rosidl_target_interfaces(se3_controller_node
-${PROJECT_NAME} "rosidl_typesupport_cpp")
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(se3_controller_node ${cpp_typesupport_target})
+
 
 install(TARGETS
   se3_controller_node
@@ -97,14 +98,26 @@ target_include_directories(se3controller_mavros_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-rosidl_target_interfaces(se3controller_mavros_node
-${PROJECT_NAME} "rosidl_typesupport_cpp")
+rosidl_get_typesupport_target(cpp_typesupport_target_mavros ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(se3controller_mavros_node ${cpp_typesupport_target_mavros})
+
 
 install(TARGETS
   se3controller_mavros_node
   DESTINATION lib/${PROJECT_NAME}
 )
 ###########################
+# Install launch files
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install config files
+install(DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+##############################3
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
