@@ -16,6 +16,7 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include <sensor_msgs/msg/imu.hpp>
 #include "mavros_msgs/msg/state.hpp"
+#include <std_msgs/msg/bool.hpp>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -57,11 +58,17 @@ private:
   */
   void publishMavrosSetpoint();
 
+  /*
+  @brief Publish motors arming state to SE3 controller node
+  */
+  void publishMotorState();
+
   rclcpp::Subscription<px4_geometric_controller::msg::SE3Command>::SharedPtr se3_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
 
   rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr attitude_raw_pub_; // publisher for mavros setpoints
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motors_state_pub_;
 
   bool odom_set_, imu_set_, so3_cmd_set_;
   Eigen::Quaterniond odom_q_, imu_q_;
@@ -167,6 +174,7 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_to_mavros_no
 
     
   attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
+  motors_state_pub_ = this->create_publisher<std_msgs::msg::Bool>("se3controller/enable_motors", 10);
 
   se3_cmd_sub_ = this->create_subscription<px4_geometric_controller::msg::SE3Command>(
     "se3controller/cmd", 10, std::bind(&SE3ControllerToMavros::se3CmdCallback, this, _1));
@@ -187,6 +195,9 @@ void
 SE3ControllerToMavros::mavrosStateCallback(const mavros_msgs::msg::State & msg)
 {
   motors_armed_ = msg.armed;
+  std_msgs::msg::Bool motors_state_msg;
+  motors_state_msg.data = motors_armed_;
+  motors_state_pub_->publish(motors_state_msg);
 }
 
 void
