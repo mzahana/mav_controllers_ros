@@ -273,13 +273,14 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
   throttle = std::min(1.0, throttle);
   throttle = std::max(0.0, throttle);
 
-  if(motors_armed_)
+  if(!motors_armed_)
     throttle = 0;
 
   // publish messages
   mavros_msgs::msg::AttitudeTarget setpoint_msg;
   setpoint_msg.header = msg.header;
-  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE; // @todo !!!!!! Set the correct type_mask !!!!!!
+  // Either use attitude+thrust OR rates+thrust. Here, we use rates+thrust (so, ignore attitude)
+  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE;
   setpoint_msg.orientation.w = q_des_transformed.w();
   setpoint_msg.orientation.x = q_des_transformed.x();
   setpoint_msg.orientation.y = q_des_transformed.y();
