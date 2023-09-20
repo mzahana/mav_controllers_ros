@@ -12,6 +12,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <std_msgs/msg/bool.hpp>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -34,7 +35,6 @@ public:
   // EIGEN_MAKE_ALIGNED_OPERATOR_NEW;  // Need this since we have SO3Control which needs aligned pointer
 
 private:
-  // void enable_motors_callback(const std_msgs::Bool::ConstPtr &msg); // @todo Make it a service!
   // void corrections_callback(const kr_mav_msgs::Corrections::ConstPtr &msg); // Maybe we don't need it!! 
   // void cfg_callback(kr_mav_controllers::SO3Config &config, uint32_t level); // @todo Need to adapt to ros2
   
@@ -43,6 +43,12 @@ private:
   @brief Publish SE3 command to the flight controller
   */
   void publishSE3Command();
+  /*
+  @brief ROS callback to motor state
+  @param msg px4_geometric_controller::msg::TargetCommand
+  */
+  void motorStateCallback(const std_msgs::msg::Bool & msg);
+
   /*
   @brief ROS callback to receive setpoints of the SE2 controller
   @param msg px4_geometric_controller::msg::TargetCommand
@@ -65,6 +71,7 @@ private:
   /* Subscribers */
   rclcpp::Subscription<px4_geometric_controller::msg::TargetCommand>::SharedPtr target_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
   // ros::Subscriber imu_sub_; /* Probably odom is sufficient ! */
   // ros::Subscriber enable_motors_sub_, corrections_sub_;
 
@@ -209,11 +216,22 @@ position_cmd_updated_(false),
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "se3controller/odom", 10, std::bind(&SE3ControllerNode::odomCallback, this, _1));
+
+  enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "se3controller/enable_motors", 10, std::bind(&SE3ControllerNode::motorStateCallback, this, _1));
 }
 
 SE3ControllerNode::~SE3ControllerNode()
 {
   /* Destructor */
+}
+
+void SE3ControllerNode::motorStateCallback(const std_msgs::msg::Bool & msg)
+{
+  if (msg.data)
+    enable_motors_ = true;
+  else
+    enable_motors_ = false;
 }
 
 void
@@ -298,6 +316,11 @@ SE3ControllerNode::publishSE3Command()
     ki = config_ki_; // @todo implement dynamic config
     kib = config_kib_;
   }
+  else
+  {
+    ki = Eigen::Vector3f::Zero();
+    kib = Eigen::Vector3f::Zero();
+  }
 
   controller_.calculateControl(des_pos_, des_vel_, des_acc_, des_jrk_, des_yaw_, des_yaw_dot_, kx_, kv_, ki, kib);
 
@@ -347,6 +370,7 @@ SE3ControllerNode::publishSE3Command()
   cmd_viz_msg.pose.orientation.w = orientation.w();
   command_viz_pub_->publish(cmd_viz_msg);
 }
+
 
 /**
  * Main function

@@ -251,6 +251,7 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
     RCLCPP_WARN_THROTTLE(this->get_logger(), *(clock_.get()), 1000, "Psi > 1.0, orientation error is too large!");
   }
 
+  // Force from inertial frame to body frame (along body z-axis)
   double throttle = f_des(0) * R_cur(0, 2) + f_des(1) * R_cur(1, 2) + f_des(2) * R_cur(2, 2);
 
   // Scale force to individual rotor velocities (rad/s).
@@ -260,6 +261,9 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
   // throttle = lin_cof_a_ * throttle + lin_int_b_;
 
   // normalize using the maximum thrust by all motors
+  // There is also thrust scaling in mavros (px4_config.yaml), but we will do it here, and keep the the MAVROS scaling at its default=1
+  // MAVROS scaling: thrust := thrust * thrust_scaling
+  //  Ref: https://github.com/mavlink/mavros/blob/ros2/mavros/src/plugins/setpoint_raw.cpp#L305
   throttle = throttle/max_thrust_;
 
   // failsafe for the error in traj_gen that can lead to nan values
@@ -270,6 +274,8 @@ SE3ControllerToMavros::se3CmdCallback(const px4_geometric_controller::msg::SE3Co
   }
 
   // clamp from 0.0 to 1.0
+  // This is also done in MAVROS (redundant?)
+  //    https://github.com/mavlink/mavros/blob/ros2/mavros/src/plugins/setpoint_raw.cpp#L305
   throttle = std::min(1.0, throttle);
   throttle = std::max(0.0, throttle);
 

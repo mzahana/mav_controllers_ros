@@ -42,7 +42,7 @@ class SE3Controller
   float cos_max_tilt_angle_;
 
   // Outputs of the controller
-  Eigen::Vector3f force_;
+  Eigen::Vector3f force_; // Total force in inertial frame
   Eigen::Quaternionf orientation_;
   Eigen::Vector3f angular_velocity_;
   Eigen::Vector3f pos_int_;
