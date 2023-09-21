@@ -30,8 +30,8 @@ def generate_launch_description():
         output='screen',
         parameters=[LaunchConfiguration('param_file')],
         remappings=[
-            ('mavros/attitude_target', 'mavros/setpoint_raw/target_attitude'),
-            ('ose3controller_mavros/dom', 'mavros/local_position/odom'),
+            ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'),
+            ('se3controller_mavros/odom', 'mavros/local_position/odom'),
             ('se3controller_mavros/imu', 'mavros/imu/data'),
             ('mavros/state', 'mavros/state')
         ]

@@ -31,7 +31,7 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('yaml_path')],
         remappings=[
             ('se3controller/setpoint', 'se3controller/setpoint'),
-            ('se3controller/odom', '/mavros/local_position/odom'),
+            ('se3controller/odom', 'mavros/local_position/odom'),
             ('se3controller/enable_motors', 'se3controller/enable_motors')
         ]
     )
