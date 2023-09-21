@@ -53,5 +53,8 @@ The two above subscrioptions are used to handle the difference in orientation th
 ### Launch file
 * [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py)
 
+# How to use this controller?
+To be done.
+
 # Notes
  **This controller has not been tested yet**
