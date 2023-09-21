@@ -2,7 +2,7 @@ se3controller_mavros_node:
   ros__parameters:
     num_props: 4
     kf: 1.0
-    max_thrust: 10.0
+    max_thrust: 34.0
     lin_cof_a: 1.0
     lin_int_b: 0.0
     se3_cmd_timeout: 0.25
