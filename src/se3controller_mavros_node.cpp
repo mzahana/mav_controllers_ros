@@ -190,10 +190,10 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
     "se3controller/cmd", 10, std::bind(&SE3ControllerToMavros::se3CmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-    "se3controller_mavros/odom", 10, std::bind(&SE3ControllerToMavros::odomCallback, this, _1));
+    "se3controller_mavros/odom", rclcpp::SensorDataQoS(), std::bind(&SE3ControllerToMavros::odomCallback, this, _1));
   
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
-    "se3controller_mavros/imu", 10, std::bind(&SE3ControllerToMavros::imuCallback, this, _1));
+    "se3controller_mavros/imu", rclcpp::SensorDataQoS(), std::bind(&SE3ControllerToMavros::imuCallback, this, _1));
 
   mavros_state_sub_ = this->create_subscription<mavros_msgs::msg::State>(
     "mavros/state", 10, std::bind(&SE3ControllerToMavros::mavrosStateCallback, this, _1));

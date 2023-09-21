@@ -218,7 +218,7 @@ SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
       "se3controller/setpoint", 10, std::bind(&SE3ControllerNode::targetCmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "se3controller/odom", 10, std::bind(&SE3ControllerNode::odomCallback, this, _1));
+      "se3controller/odom", rclcpp::SensorDataQoS(), std::bind(&SE3ControllerNode::odomCallback, this, _1));
 
   enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "se3controller/enable_motors", 10, std::bind(&SE3ControllerNode::motorStateCallback, this, _1));
