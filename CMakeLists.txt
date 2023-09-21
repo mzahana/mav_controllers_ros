@@ -106,6 +106,23 @@ install(TARGETS
   se3controller_mavros_node
   DESTINATION lib/${PROJECT_NAME}
 )
+
+#
+# Test node
+#
+add_executable(se3_setpoint_test_node test/se3_setpoint_test.cpp)
+ament_target_dependencies(se3_setpoint_test_node rclcpp)
+target_include_directories(se3_setpoint_test_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_get_typesupport_target(cpp_typesupport_target_se3_setpoint_test ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(se3_setpoint_test_node ${cpp_typesupport_target_se3_setpoint_test})
+install(TARGETS
+se3_setpoint_test_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ###########################
 # Install launch files
 install(DIRECTORY launch
