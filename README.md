@@ -22,12 +22,13 @@ This node is the main ros 2 interface. The core SE3Controller library is impleme
 **NOTE** All the above subscriptions can be remapped to the right topics in the launch file [launch/se3controller.launch.py](launch/se3controller.launch.py)
 
 ### Publishers
-* `se3controller/cmd`: This uses a custom message of type [SE3Command](msg/SE3Command.msg). It publishes the output of the SE3 controller to be consumed by a particular interface (e.g. MAVROS)
+* `se3controller/cmd`: This uses a custom message of type [SE3Command](msg/SE3Command.msg). It publishes the output of the SE3 controller to be consumed by a particular interface (e.g. MAVROS). Note that his cannot be remapped directly to a MAVROS topic. An interface node is needed, see the `se3controller_mavros_node` section below.
 
-* `se3controller/cmd_pose`: This uses `geometry_msgs::msg::PoseStamped`. It published the position part of the command for visualizatino in RViz2.
+* `se3controller/cmd_pose`: This uses `geometry_msgs::msg::PoseStamped`. It publishes the position part of the command for visualization in RViz2.
 
-### Launch file
+### Launch and config files
 * [launch/se3controller.launch.py](launch/se3controller.launch.py)
+* [config/se3controller.yaml](config/se3controller.yaml)
 
 ## se3controller_mavros_node
 This nodes is an interface between the main node `se3controller_node` and MAVROS.
@@ -50,8 +51,9 @@ The two above subscrioptions are used to handle the difference in orientation th
 
 * `se3controller/enable_motors`: Uses `std_msgs::msg:Bool`. It published the motors state (armed or not) which is consumed by the main node `se3controller_node` to engage the integrators coeeficients in the controller computations. 
 
-### Launch file
+### Launch and config files
 * [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py)
+* [config/se3controller_mavros.yaml](config/se3controller_mavros.yaml)
 
 # How to use this controller?
 To be done.
