@@ -4,9 +4,9 @@
     use_external_yaw: true
     gains:
       pos:
-        x: 1.0
-        y: 1.0
-        z: 1.5
+        x: 2.0
+        y: 2.0
+        z: 2.5
       vel:
         x: 2.0
         y: 2.0

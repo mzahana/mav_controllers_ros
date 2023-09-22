@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include "px4_geometric_controller/msg/target_command.hpp"
+#include "geometric_controller_ros/msg/target_command.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -9,14 +9,14 @@ class TargetCommandPublisherNode : public rclcpp::Node
 public:
     TargetCommandPublisherNode() : Node("se3_setpoint_publisher_node")
     {
-        publisher_ = this->create_publisher<px4_geometric_controller::msg::TargetCommand>("se3controller/setpoint", 10);
+        publisher_ = this->create_publisher<geometric_controller_ros::msg::TargetCommand>("se3controller/setpoint", 10);
         timer_ = this->create_wall_timer(20ms, std::bind(&TargetCommandPublisherNode::publishMessage, this));
     }
 
 private:
     void publishMessage()
     {
-        auto msg = std::make_unique<px4_geometric_controller::msg::TargetCommand>();
+        auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
 
         // Fill in your fixed values here
         msg->position.x = 0.0;
@@ -40,7 +40,7 @@ private:
         publisher_->publish(*msg);
     }
 
-    rclcpp::Publisher<px4_geometric_controller::msg::TargetCommand>::SharedPtr publisher_;
+    rclcpp::Publisher<geometric_controller_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 

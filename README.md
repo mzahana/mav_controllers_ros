@@ -1,4 +1,4 @@
-# px4_geometric_controller
+# geometric_controller_ros
 A ROS2 package that provides implementation of a geometric controller, SE(3).
 The implementation of the SE(3) controller is general in the sense it is not implemented for a particular interface such as MAVROS. 
 For particular interface, a separate ROS 2 node is used. A MAVROS insterface is currently supported to be used with a PX4 autopilot.
@@ -14,7 +14,7 @@ Depedencies can be found the in the [package.xml](package.xml) file.
 This node is the main ros 2 interface. The core SE3Controller library is implemented in [src/SE3Controller.cpp](src/SE3Controller.cpp). This node (se3controller_node) uses this library and interface the controller to ROS 2 system. This node is implemented in [src/se3_controller_node.cpp](src/se3_controller_node.cpp).
 
 ### Subscriptions
-* `se3controller/setpoint` This is the setpoint that that the controller needs. Should be published by another node. This topic uses a custom message of type `px4_geometric_controller::msg::TargetCommand` This custom message is defined in [msg/TargetCommand.msg](msg/TargetCommand.msg).
+* `se3controller/setpoint` This is the setpoint that that the controller needs. Should be published by another node. This topic uses a custom message of type `geometric_controller_ros::msg::TargetCommand` This custom message is defined in [msg/TargetCommand.msg](msg/TargetCommand.msg).
 * `se3controller/odom` Odometry topic. Uses message `nav_msgs::msg:Odometry`. This is used to get the position/velocity feedback.
 
 * `se3controller/enable_motors`: This topic uses `std_msgs::msg::Bool` to get the state of motors (armed or not). This is used to engage the integrators coefiicients accordingly.

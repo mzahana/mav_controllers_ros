@@ -1,6 +1,6 @@
-#include <px4_geometric_controller/SE3Controller.h>
-#include "px4_geometric_controller/msg/se3_command.hpp"
-#include "px4_geometric_controller/msg/target_command.hpp"
+#include <geometric_controller_ros/SE3Controller.h>
+#include "geometric_controller_ros/msg/se3_command.hpp"
+#include "geometric_controller_ros/msg/target_command.hpp"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -45,15 +45,15 @@ private:
   void publishSE3Command();
   /*
   @brief ROS callback to motor state
-  @param msg px4_geometric_controller::msg::TargetCommand
+  @param msg geometric_controller_ros::msg::TargetCommand
   */
   void motorStateCallback(const std_msgs::msg::Bool & msg);
 
   /*
   @brief ROS callback to receive setpoints of the SE2 controller
-  @param msg px4_geometric_controller::msg::TargetCommand
+  @param msg geometric_controller_ros::msg::TargetCommand
   */
-  void targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg);
+  void targetCmdCallback(const geometric_controller_ros::msg::TargetCommand & msg);
 
   /*
   @brief Odometry ROS callback to receive linear and rotational measurements
@@ -64,12 +64,12 @@ private:
   // void imu_callback(const sensor_msgs::Imu::ConstPtr &pose); /* No need ?!*/
 
   /*Publishers */
-  rclcpp::Publisher<px4_geometric_controller::msg::SE3Command>::SharedPtr se3_command_pub_;
+  rclcpp::Publisher<geometric_controller_ros::msg::SE3Command>::SharedPtr se3_command_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  odom_pose_pub_;  // For sending PoseStamped to firmware ??
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  command_viz_pub_; // cmd visulaization in RViz2
 
   /* Subscribers */
-  rclcpp::Subscription<px4_geometric_controller::msg::TargetCommand>::SharedPtr target_cmd_sub_;
+  rclcpp::Subscription<geometric_controller_ros::msg::TargetCommand>::SharedPtr target_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
   // ros::Subscriber imu_sub_; /* Probably odom is sufficient ! */
@@ -210,11 +210,11 @@ SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
 
   /* Define subscribers and publishers */
 
-  se3_command_pub_ = this->create_publisher<px4_geometric_controller::msg::SE3Command>("se3controller/cmd", 10);
+  se3_command_pub_ = this->create_publisher<geometric_controller_ros::msg::SE3Command>("se3controller/cmd", 10);
   odom_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/odom_pose", 10);
   command_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("se3controller/cmd_pose", 10);
 
-  target_cmd_sub_ = this->create_subscription<px4_geometric_controller::msg::TargetCommand>(
+  target_cmd_sub_ = this->create_subscription<geometric_controller_ros::msg::TargetCommand>(
       "se3controller/setpoint", 10, std::bind(&SE3ControllerNode::targetCmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -279,7 +279,7 @@ SE3ControllerNode::odomCallback(const nav_msgs::msg::Odometry & msg)
 }
 
 void
-SE3ControllerNode::targetCmdCallback(const px4_geometric_controller::msg::TargetCommand & msg)
+SE3ControllerNode::targetCmdCallback(const geometric_controller_ros::msg::TargetCommand & msg)
 {
   des_pos_ = Eigen::Vector3f(msg.position.x, msg.position.y, msg.position.z);
   des_vel_ = Eigen::Vector3f(msg.velocity.x, msg.velocity.y, msg.velocity.z);
@@ -332,7 +332,7 @@ SE3ControllerNode::publishSE3Command()
   const Eigen::Vector3f &ang_vel = controller_.getComputedAngularVelocity();
 
   // kr_mav_msgs::SO3Command::Ptr so3_command = boost::make_shared<kr_mav_msgs::SO3Command>();
-  px4_geometric_controller::msg::SE3Command se3_cmd;
+  geometric_controller_ros::msg::SE3Command se3_cmd;
   se3_cmd.header.stamp = this->now();
   se3_cmd.header.frame_id = frame_id_;
   se3_cmd.force.x = force(0);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(px4_geometric_controller)
+project(geometric_controller_ros)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
