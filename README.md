@@ -76,7 +76,7 @@ source install/setup.bash
 ros2 launch geometric_controller_ros mavros_interface.launch.py
 ```
 
-# Creating custom ingterface node
+# Creating custom interface node
 If you have a different interface than mavros, you will need to create the  following 3 files.
 * create an interface node similar to [src/se3controller_mavros_node.cpp](src/se3controller_mavros_node.cpp). Then, add it to the CMakeLists.txt file
 
