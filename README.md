@@ -84,5 +84,7 @@ If you have a different interface than mavros, you will need to create the  foll
 
 * Create a launch file for your custom interface similar to [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py) that runs your custom interface node and used your custom config file.
 
+* You will also need to remap the odometry topic in the main controller node to the topic that your vehicle publish. Also remap the odom and IMU topic in your custom interface node.
+
 # Notes
  **This controller has not been tested yet**
