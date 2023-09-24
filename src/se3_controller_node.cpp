@@ -123,73 +123,74 @@ SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
   /* Get params */
   this->declare_parameter("mass", 0.5);
   mass_ = this->get_parameter("mass").get_parameter_value().get<float>();
+  RCLCPP_INFO(this->get_logger(), "Mass = %0.2f Kg", mass_);
   controller_.setMass(mass_);
   controller_.setGravity(g_);
 
   this->declare_parameter("use_external_yaw", true);
   use_external_yaw_ = this->get_parameter("use_external_yaw").get_parameter_value().get<bool>();
 
-  this->declare_parameter("gains/pos/x", 7.4f);
-  config_kx_[0] = this->get_parameter("gains/pos/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.pos.x", 7.4f);
+  config_kx_[0] = this->get_parameter("gains.pos.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/pos/y", 7.4f);
-  config_kx_[1] = this->get_parameter("gains/pos/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.pos.y", 7.4f);
+  config_kx_[1] = this->get_parameter("gains.pos.y").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/pos/z", 10.4f);
-  config_kx_[2] = this->get_parameter("gains/pos/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.pos.z", 10.4f);
+  config_kx_[2] = this->get_parameter("gains.pos.z").get_parameter_value().get<float>();
 
   kx_[0] = config_kx_[0];
   kx_[1] = config_kx_[1];
   kx_[2] = config_kx_[2];
 
-  this->declare_parameter("gains/vel/x", 4.8f);
-  config_kv_[0] = this->get_parameter("gains/vel/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.vel.x", 4.8f);
+  config_kv_[0] = this->get_parameter("gains.vel.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/vel/y", 4.8f);
-  config_kv_[1] = this->get_parameter("gains/vel/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.vel.y", 4.8f);
+  config_kv_[1] = this->get_parameter("gains.vel.y").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/vel/z", 6.0f);
-  config_kv_[2] = this->get_parameter("gains/vel/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.vel.z", 6.0f);
+  config_kv_[2] = this->get_parameter("gains.vel.z").get_parameter_value().get<float>();
 
   kv_[0] = config_kv_[0];
   kv_[1] = config_kv_[1];
   kv_[2] = config_kv_[2];
 
-  this->declare_parameter("gains/ki/x", 0.0f);
-  config_ki_[0] = this->get_parameter("gains/ki/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ki.x", 0.0f);
+  config_ki_[0] = this->get_parameter("gains.ki.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/ki/y", 0.0f);
-  config_ki_[1] = this->get_parameter("gains/ki/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ki.y", 0.0f);
+  config_ki_[1] = this->get_parameter("gains.ki.y").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/ki/z", 0.0f);
-  config_ki_[2] = this->get_parameter("gains/ki/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ki.z", 0.0f);
+  config_ki_[2] = this->get_parameter("gains.ki.z").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/kib/x", 0.0f);
-  config_kib_[0] = this->get_parameter("gains/kib/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.kib.x", 0.0f);
+  config_kib_[0] = this->get_parameter("gains.kib.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/kib/y", 0.0f);
-  config_kib_[1] = this->get_parameter("gains/kib/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.kib.y", 0.0f);
+  config_kib_[1] = this->get_parameter("gains.kib.y").get_parameter_value().get<float>();
   
-  this->declare_parameter("gains/kib/z", 0.0f);
-  config_kib_[2] = this->get_parameter("gains/kib/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.kib.z", 0.0f);
+  config_kib_[2] = this->get_parameter("gains.kib.z").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/rot/x", 1.5f);
-  kR_[0] = this->get_parameter("gains/rot/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.rot.x", 1.5f);
+  kR_[0] = this->get_parameter("gains.rot.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/rot/y", 1.5f);
-  kR_[1] = this->get_parameter("gains/rot/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.rot.y", 1.5f);
+  kR_[1] = this->get_parameter("gains.rot.y").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/rot/z", 1.0f);
-  kR_[2] = this->get_parameter("gains/rot/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.rot.z", 1.0f);
+  kR_[2] = this->get_parameter("gains.rot.z").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/ang/x", 0.13f);
-  kOm_[0] = this->get_parameter("gains/ang/x").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ang.x", 0.13f);
+  kOm_[0] = this->get_parameter("gains.ang.x").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/ang/y", 0.13f);
-  kOm_[1] = this->get_parameter("gains/ang/y").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ang.y", 0.13f);
+  kOm_[1] = this->get_parameter("gains.ang.y").get_parameter_value().get<float>();
 
-  this->declare_parameter("gains/ang/z", 0.1f);
-  kOm_[2] = this->get_parameter("gains/ang/z").get_parameter_value().get<float>();
+  this->declare_parameter("gains.ang.z", 0.1f);
+  kOm_[2] = this->get_parameter("gains.ang.z").get_parameter_value().get<float>();
 
   float max_pos_int, max_pos_int_b;
   this->declare_parameter("max_pos_int", 0.5f);
@@ -325,6 +326,8 @@ SE3ControllerNode::publishSE3Command()
     kib = Eigen::Vector3f::Zero();
   }
 
+  // std::cout << "kx_:" << std::endl << kx_;
+  // std::cout << "kv_: " << std::endl << kv_;
   controller_.calculateControl(des_pos_, des_vel_, des_acc_, des_jrk_, des_yaw_, des_yaw_dot_, kx_, kv_, ki, kib);
 
   const Eigen::Vector3f &force = controller_.getComputedForce();

@@ -310,7 +310,8 @@ SE3ControllerToMavros::se3CmdCallback(const geometric_controller_ros::msg::SE3Co
   mavros_msgs::msg::AttitudeTarget setpoint_msg;
   setpoint_msg.header = msg.header;
   // Either use attitude+thrust OR rates+thrust. Here, we use rates+thrust (so, ignore attitude)
-  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE;
+  // NOTE mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE does not make it stable for some reason!!
+  setpoint_msg.type_mask = 0; //mavros_msgs::msg::AttitudeTarget::IGNORE_PITCH_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_ROLL_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_YAW_RATE;
   setpoint_msg.orientation.w = q_des_transformed.w();
   setpoint_msg.orientation.x = q_des_transformed.x();
   setpoint_msg.orientation.y = q_des_transformed.y();

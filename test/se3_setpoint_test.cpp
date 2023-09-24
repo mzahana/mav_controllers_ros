@@ -9,6 +9,15 @@ class TargetCommandPublisherNode : public rclcpp::Node
 public:
     TargetCommandPublisherNode() : Node("se3_setpoint_publisher_node")
     {
+        this->declare_parameter("x", 0.0f);
+        x_ = this->get_parameter("x").get_parameter_value().get<float>();
+        
+        this->declare_parameter("y", 0.0f);
+        y_ = this->get_parameter("y").get_parameter_value().get<float>();
+
+        this->declare_parameter("z", 0.0f);
+        z_ = this->get_parameter("z").get_parameter_value().get<float>();
+
         publisher_ = this->create_publisher<geometric_controller_ros::msg::TargetCommand>("se3controller/setpoint", 10);
         timer_ = this->create_wall_timer(20ms, std::bind(&TargetCommandPublisherNode::publishMessage, this));
     }
@@ -19,9 +28,9 @@ private:
         auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
 
         // Fill in your fixed values here
-        msg->position.x = 0.0;
-        msg->position.y = 0.0;
-        msg->position.z = 1.0;
+        msg->position.x = x_;
+        msg->position.y = y_;
+        msg->position.z = z_;
         msg->velocity.x = 0.0;
         msg->velocity.y = 0.0;
         msg->velocity.z = 0.0;
@@ -39,6 +48,9 @@ private:
 
         publisher_->publish(*msg);
     }
+
+    // target positions
+    float x_, y_, z_;
 
     rclcpp::Publisher<geometric_controller_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
