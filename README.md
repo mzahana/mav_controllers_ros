@@ -86,5 +86,21 @@ If you have a different interface than mavros, you will need to create the  foll
 
 * You will also need to remap the odometry topic in the main controller node to the topic that your vehicle publish. Also remap the odom and IMU topic in your custom interface node.
 
+# Test nodes
+
+## se3_setpoint_test_node
+To test the main controller node you can use the test node in [test/se3_setpoint_test.cpp](test/se3_setpoint_test.cpp) to send some position setpoints.
+```bash
+ros2 run geometric_controller_ros se3_setpoint_test_node --ros-args -p x:=-1.0 -p y:=-1.0 -p z:=2.0
+```
+`x,y,z` are target positions.
+
 # Notes
- **This controller has not been tested yet**
+* This controller is partially tested in with PX4 SITL woth the `x500` quadcopter model. You will need to install PX4 and run the simulation using `make px4_sitl gz_x500`, and run the `mavros.launch.py` included in this package in addition to `mavros_interface.launch.py`.
+
+# Updates
+* Sept, 2023: Initial test with PX4 SITL using the `x500` quadopter model is working OK.
+
+# TODO
+* publish position and velocity errors for debugging and tuning the gains in `se3controller.yaml`
+* implement a node for trajectory generation (circle, infinity shape)
