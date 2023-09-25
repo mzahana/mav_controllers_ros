@@ -15,7 +15,7 @@ public:
         this->declare_parameter("y", 0.0f);
         y_ = this->get_parameter("y").get_parameter_value().get<float>();
 
-        this->declare_parameter("z", 0.0f);
+        this->declare_parameter("z", 2.0f);
         z_ = this->get_parameter("z").get_parameter_value().get<float>();
 
         this->declare_parameter("yaw", 0.0f);
