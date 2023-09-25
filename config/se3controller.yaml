@@ -4,21 +4,21 @@ se3controller_node:
     use_external_yaw: true
     gains:
       pos:
-        x: 5.0
-        y: 5.0
-        z: 7.0
+        x: 7.4
+        y: 7.4
+        z: 10.0
       vel:
-        x: 4.0
-        y: 4.0
+        x: 4.8
+        y: 4.8
         z: 5.0
       ki:
         x: 0.1
         y: 0.1
-        z: 0.1
+        z: 0.2
       kib:
         x: 0.1
         y: 0.1
-        z: 0.1
+        z: 0.2
       rot:
         x: 1.0
         y: 1.0
@@ -27,6 +27,6 @@ se3controller_node:
         x: 0.13
         y: 0.13
         z: 0.1
-    max_pos_int: 0.5
-    mas_pos_int_b: 0.5
+    max_pos_int: 1.0
+    mas_pos_int_b: 1.0
     max_tilt_angle: 0.7853  # rad
