@@ -114,6 +114,9 @@ void SE3Controller::calculateControl(const Eigen::Vector3f &des_pos, const Eigen
   // Following frame convention in
   // Ref: https://doi.org/10.1109/ICRA.2011.5980409
   Eigen::Vector3f b1c, b2c, b3c;
+
+  // @ todo Need to to check yaw error for stability of the position control
+  // If the yaw error is too large, maybe it should be forced to a reduced value to gurantee stability
   const Eigen::Vector3f b1d(std::cos(des_yaw), std::sin(des_yaw), 0);
 
   if(force_.norm() > 1e-6f)
