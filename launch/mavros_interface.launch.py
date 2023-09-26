@@ -33,12 +33,19 @@ def generate_launch_description():
         description='Full path to the YAML parameter file to use for se3controller_mavros_node'
     )
 
-    # Include the two launch files
+    # Include mavros.launch.py
+    mavros_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/mavros.launch.py']),
+        launch_arguments={'fcu_url': 'udp://:14540@127.0.0.1:14557'}.items()
+    )
+
+    # Include se3controller.launch.py
     se3controller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/se3controller.launch.py']),
         launch_arguments={'yaml_path': LaunchConfiguration('se3controller_yaml')}.items()
     )
 
+    # Include se3controller_to_mavros.launch.py
     se3controller_to_mavros_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/se3controller_to_mavros.launch.py']),
         launch_arguments={'param_file': LaunchConfiguration('se3controller_mavros_yaml')}.items()
@@ -47,6 +54,7 @@ def generate_launch_description():
     return LaunchDescription([
         yaml_path_arg,
         param_file_arg,
+        mavros_launch,
         se3controller_launch,
         se3controller_to_mavros_launch,
         LogInfo(msg=["Combined launch file initiated."]),
