@@ -3,6 +3,9 @@
 #include <cmath>
 #include <std_msgs/msg/bool.hpp>
 #include "mavros_msgs/msg/state.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -27,61 +30,82 @@ public:
         this->declare_parameter("speed", 2.0f);
         speed_ = this->get_parameter("speed").get_parameter_value().get<float>();
 
+        this->declare_parameter("publish_rate_ms", 10);
+        int rate_ms = this->get_parameter("publish_rate_ms").get_parameter_value().get<int>();
+        publish_duration_ = std::chrono::milliseconds(rate_ms);
+
+        this->declare_parameter("max_yaw_rate", 0.05f);
+        max_yaw_rate_ = this->get_parameter("max_yaw_rate").get_parameter_value().get<float>();
+
         publisher_ = this->create_publisher<geometric_controller_ros::msg::TargetCommand>("se3controller/setpoint", 10);
-        timer_ = this->create_wall_timer(20ms, std::bind(&CircularTrajectoryPublisherNode::publishMessage, this));
+        timer_ = this->create_wall_timer(publish_duration_, std::bind(&CircularTrajectoryPublisherNode::publishMessage, this));
 
         start_time_ = this->now();
 
         mavros_state_sub_ = this->create_subscription<mavros_msgs::msg::State>(
-      "mavros/state", 10, std::bind(&CircularTrajectoryPublisherNode::mavrosStateCallback, this, _1));
+            "mavros/state", 10, std::bind(&CircularTrajectoryPublisherNode::mavrosStateCallback, this, _1));
 
         enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "se3controller/enable_motors", 10, std::bind(&CircularTrajectoryPublisherNode::motorStateCallback, this, _1));
+            "se3controller/enable_motors", 10, std::bind(&CircularTrajectoryPublisherNode::motorStateCallback, this, _1));
+
+        odometry_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+            "mavros/local_position/odom", rclcpp::SensorDataQoS(), std::bind(&CircularTrajectoryPublisherNode::odometryCallback, this, _1));
     }
 
 private:
     void motorStateCallback(const std_msgs::msg::Bool & msg)
     {
-      if (msg.data)
-      {
-        enable_motors_ = true;
-      }
-        
-      else
-      {
-        start_time_is_set_ = false;
-        enable_motors_ = false;
-      }
-              
+        if (msg.data)
+        {
+            enable_motors_ = true;
+        }
+        else
+        {
+            start_time_is_set_ = false;
+            enable_motors_ = false;
+        }
     }
 
     void mavrosStateCallback(const mavros_msgs::msg::State & msg)
     {
-      if (msg.mode == msg.MODE_PX4_OFFBOARD)
-        offboard_mode_ = true;      
-      else
-      {
-        offboard_mode_ = false;
-        start_time_is_set_ = false;
-      }
-         
+        if (msg.mode == msg.MODE_PX4_OFFBOARD)
+            offboard_mode_ = true;      
+        else
+        {
+            offboard_mode_ = false;
+            start_time_is_set_ = false;
+        }
+    }
+
+    void odometryCallback(const nav_msgs::msg::Odometry & msg)
+    {
+        double roll, pitch, yaw;
+        tf2::Quaternion q(
+            msg.pose.pose.orientation.x,
+            msg.pose.pose.orientation.y,
+            msg.pose.pose.orientation.z,
+            msg.pose.pose.orientation.w);
+        tf2::Matrix3x3 m(q);
+        m.getRPY(roll, pitch, yaw);
+        actual_yaw_ = yaw;
+        // Update the current drone position    
+        current_drone_position_x_ = msg.pose.pose.position.x;
+        current_drone_position_y_ = msg.pose.pose.position.y;
     }
 
     void publishMessage()
     {
         auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
-        // Publish only if the motors are engaged
         if(!enable_motors_ or !offboard_mode_)
         {
-          RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
-          // Publish empty msg
-          publisher_->publish(*msg);
-          return;
+            RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
+            publisher_->publish(*msg);
+            return;
         }
         if(!start_time_is_set_)
         {
-          start_time_ = this->now();
-          start_time_is_set_ = true;
+            start_time_ = this->now();
+            start_time_is_set_ = true;
         }
 
         double elapsed_time = (this->now() - start_time_).seconds();
@@ -108,8 +132,23 @@ private:
         msg->jerk.z = 0.0;
 
         // Yaw and Yaw Rate
-        msg->yaw = 0.0 ;//atan2(msg->velocity.y, msg->velocity.x);
-        msg->yaw_dot = 0.0; //omega;
+        // double desired_yaw = atan2(msg->velocity.y, msg->velocity.x);
+        // Compute the direction vector
+        double dir_x = msg->position.x - current_drone_position_x_;
+        double dir_y = msg->position.y - current_drone_position_y_;
+
+        // Compute the desired yaw based on the direction vector
+        double desired_yaw = atan2(dir_y, dir_x);
+
+        double yaw_diff = desired_yaw - actual_yaw_;
+        if (yaw_diff > M_PI) yaw_diff -= 2.0 * M_PI;
+        if (yaw_diff < -M_PI) yaw_diff += 2.0 * M_PI;
+        double seconds_duration = static_cast<double>(publish_duration_.count()) / 1000.0;
+        double limited_yaw_rate = std::clamp(yaw_diff / seconds_duration, static_cast<double>(-max_yaw_rate_), static_cast<double>(max_yaw_rate_));
+        double new_des_yaw = actual_yaw_+  limited_yaw_rate * seconds_duration;
+
+        msg->yaw = new_des_yaw;
+        msg->yaw_dot = limited_yaw_rate;
 
         msg->kx = {0.0, 0.0, 0.0};
         msg->kv = {0.0, 0.0, 0.0};
@@ -118,25 +157,23 @@ private:
         publisher_->publish(*msg);
     }
 
-    float x_center_, y_center_, z_, radius_, speed_;
+    float x_center_, y_center_, z_, radius_, speed_, max_yaw_rate_;
     rclcpp::Publisher<geometric_controller_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
+    std::chrono::milliseconds publish_duration_;
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
     rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_sub_;
-
-    /*
-    @brief ROS callback to motor state
-    @param msg geometric_controller_ros::msg::TargetCommand
-    */
-    // void motorStateCallback(const std_msgs::msg::Bool & msg);
-
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
 
     rclcpp::Time start_time_;
-    bool start_time_is_set_;
+    bool start_time_is_set_ = false;
+    bool enable_motors_ = false;
+    bool offboard_mode_ = false;
+    double actual_yaw_ = 0.0;
+    double current_drone_position_x_ = 0.0;
+    double current_drone_position_y_ = 0.0;
 
-    bool enable_motors_;
-    bool offboard_mode_;
 };
 
 int main(int argc, char * argv[])

@@ -127,7 +127,7 @@ install(TARGETS
 # circular trajectory test node
 #
 add_executable(circular_trajectory_node test/circular_trajectory_node.cpp)
-ament_target_dependencies(circular_trajectory_node mavros_msgs rclcpp)
+ament_target_dependencies(circular_trajectory_node mavros_msgs nav_msgs tf2 tf2_ros rclcpp)
 target_include_directories(circular_trajectory_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
