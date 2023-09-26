@@ -2,6 +2,7 @@
 #include "geometric_controller_ros/msg/target_command.hpp"
 #include <cmath>
 #include <std_msgs/msg/bool.hpp>
+#include "mavros_msgs/msg/state.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -31,6 +32,9 @@ public:
 
         start_time_ = this->now();
 
+        mavros_state_sub_ = this->create_subscription<mavros_msgs::msg::State>(
+      "mavros/state", 10, std::bind(&CircularTrajectoryPublisherNode::mavrosStateCallback, this, _1));
+
         enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "se3controller/enable_motors", 10, std::bind(&CircularTrajectoryPublisherNode::motorStateCallback, this, _1));
     }
@@ -41,11 +45,6 @@ private:
       if (msg.data)
       {
         enable_motors_ = true;
-        if(!start_time_is_set_)
-        {
-          start_time_ = this->now();
-          start_time_is_set_ = true;
-        }
       }
         
       else
@@ -56,13 +55,34 @@ private:
               
     }
 
+    void mavrosStateCallback(const mavros_msgs::msg::State & msg)
+    {
+      if (msg.mode == msg.MODE_PX4_OFFBOARD)
+        offboard_mode_ = true;      
+      else
+      {
+        offboard_mode_ = false;
+        start_time_is_set_ = false;
+      }
+         
+    }
+
     void publishMessage()
     {
-        // Publish only if the motors are engaged
-        if(!enable_motors_)
-          return;
-
         auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
+        // Publish only if the motors are engaged
+        if(!enable_motors_ or !offboard_mode_)
+        {
+          RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
+          // Publish empty msg
+          publisher_->publish(*msg);
+          return;
+        }
+        if(!start_time_is_set_)
+        {
+          start_time_ = this->now();
+          start_time_is_set_ = true;
+        }
 
         double elapsed_time = (this->now() - start_time_).seconds();
         double omega = speed_ / radius_;
@@ -103,6 +123,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
+    rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_sub_;
 
     /*
     @brief ROS callback to motor state
@@ -115,6 +136,7 @@ private:
     bool start_time_is_set_;
 
     bool enable_motors_;
+    bool offboard_mode_;
 };
 
 int main(int argc, char * argv[])
