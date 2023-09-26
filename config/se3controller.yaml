@@ -30,3 +30,4 @@ se3controller_node:
     max_pos_int: 1.0
     mas_pos_int_b: 1.0
     max_tilt_angle: 0.7853  # rad
+    max_accel: 20.0

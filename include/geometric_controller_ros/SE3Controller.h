@@ -2,6 +2,7 @@
 #define SE3CONTROLLER_H
 
 #include <Eigen/Geometry>
+#include <iostream>
 // #include <Eigen/Dense>
 
 class SE3Controller
@@ -15,6 +16,7 @@ class SE3Controller
   void setVelocity(const Eigen::Vector3f &velocity);
   void setMaxIntegral(const float max_integral);
   void setMaxIntegralBody(const float max_integral_b);
+  void setMaxAcceleration(const float max_acc);
   void setCurrentOrientation(const Eigen::Quaternionf &current_orientation);
   void resetIntegrals();
   void setMaxTiltAngle(const float max_tilt_angle);
@@ -40,6 +42,7 @@ class SE3Controller
   float max_pos_int_b_;
   Eigen::Quaternionf current_orientation_;
   float cos_max_tilt_angle_;
+  float max_accel_; // Maximum acceleration in m/s^2
 
   // Outputs of the controller
   Eigen::Vector3f force_; // Total force in inertial frame

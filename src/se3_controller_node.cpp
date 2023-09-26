@@ -105,6 +105,8 @@ private:
   float mass_;
 
   const float g_;
+
+  float max_acc_;
 };
 
 //////////////// Class definitions ////////////////
@@ -118,7 +120,8 @@ SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
         enable_motors_(false),
         use_external_yaw_(false),
         have_odom_(false),
-        g_(9.81)
+        g_(9.81), 
+        max_acc_(10.0)
 {
   /* Get params */
   this->declare_parameter("mass", 0.5);
@@ -126,6 +129,10 @@ SE3ControllerNode::SE3ControllerNode(): Node("se3controller_node"),
   RCLCPP_INFO(this->get_logger(), "Mass = %0.2f Kg", mass_);
   controller_.setMass(mass_);
   controller_.setGravity(g_);
+
+  this->declare_parameter("max_accel", 10.0);
+  max_acc_ = this->get_parameter("max_accel").get_parameter_value().get<float>();
+  controller_.setMaxAcceleration(max_acc_);
 
   this->declare_parameter("use_external_yaw", true);
   use_external_yaw_ = this->get_parameter("use_external_yaw").get_parameter_value().get<bool>();

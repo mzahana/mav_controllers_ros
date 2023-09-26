@@ -54,6 +54,16 @@ void SE3Controller::setMaxTiltAngle(const float max_tilt_angle)
     cos_max_tilt_angle_ = std::cos(max_tilt_angle);
 }
 
+void SE3Controller::setMaxAcceleration(const float max_acc)
+{
+  max_accel_ = max_acc;
+  if(max_accel_ < 0)
+  {
+    std::cout << "max_accel_ can not be negative. Using the default of 10 m/s/s" << std::endl;
+    max_accel_ = 10.0;
+  }
+}
+
 void SE3Controller::calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel,
                                   const Eigen::Vector3f &des_acc, const Eigen::Vector3f &des_jerk, const float des_yaw,
                                   const float des_yaw_dot, const Eigen::Vector3f &kx, const Eigen::Vector3f &kv,
@@ -107,6 +117,10 @@ void SE3Controller::calculateControl(const Eigen::Vector3f &des_pos, const Eigen
       acc_total = lambda * acc_control + acc_grav;
   }
 
+  // Clip acceleration
+  if(acc_total.norm() > max_accel_)
+    acc_total.noalias() = (max_accel_/acc_total.norm()) * acc_total;
+    
   force_.noalias() = mass_ * acc_total;
 
   // std::cout << "Force: " << force_.transpose() << std::endl;
