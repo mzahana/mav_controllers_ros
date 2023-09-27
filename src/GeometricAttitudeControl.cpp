@@ -56,6 +56,21 @@ void GeometricAttitudeControl::setMaxAcceleration(const float max_acc)
   }
 }
 
+const Eigen::Vector3f &GeometricAttitudeControl::getComputedForce()
+{
+  return force_;
+}
+
+const Eigen::Quaternionf &GeometricAttitudeControl::getComputedOrientation()
+{
+  return orientation_;
+}
+
+const Eigen::Vector3f &GeometricAttitudeControl::getComputedAngularVelocity()
+{
+  return angular_velocity_;
+}
+
 
 void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel, const Eigen::Vector3f &des_acc,
                         const Eigen::Vector3f &des_jerk, const float des_yaw, const float des_yaw_dot,
