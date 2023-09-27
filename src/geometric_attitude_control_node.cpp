@@ -13,6 +13,7 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include "geometric_controller_ros/msg/control_errors.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -67,6 +68,7 @@ private:
   rclcpp::Publisher<geometric_controller_ros::msg::SE3Command>::SharedPtr se3_command_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  odom_pose_pub_;  // For sending PoseStamped to firmware ??
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  command_viz_pub_; // cmd visulaization in RViz2
+  rclcpp::Publisher<geometric_controller_ros::msg::ControlErrors>::SharedPtr  cont_err_pub_;
 
   /* Subscribers */
   rclcpp::Subscription<geometric_controller_ros::msg::TargetCommand>::SharedPtr target_cmd_sub_;
@@ -214,6 +216,7 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   se3_command_pub_ = this->create_publisher<geometric_controller_ros::msg::SE3Command>("geometric_controller/cmd", 10);
   odom_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("geometric_controller/odom_pose", 10);
   command_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("geometric_controller/cmd_pose", 10);
+  cont_err_pub_ = this->create_publisher<geometric_controller_ros::msg::ControlErrors>("geometric_controller/control_errors", 10);
 
   target_cmd_sub_ = this->create_subscription<geometric_controller_ros::msg::TargetCommand>(
       "geometric_controller/setpoint", 10, std::bind(&GeometricControlNode::targetCmdCallback, this, _1));
@@ -340,20 +343,31 @@ GeometricControlNode::publishSE3Command()
   const Eigen::Quaternionf &orientation = controller_.getComputedOrientation();
   const Eigen::Vector3f &ang_vel = controller_.getComputedAngularVelocity();
 
+  geometric_controller_ros::msg::ControlErrors err_msg;
+  err_msg.header.stamp = this->now();
+  err_msg.header.frame_id = frame_id_;
+  err_msg.pos_error.x = controller_.getPosError()[0];
+  err_msg.pos_error.y = controller_.getPosError()[1];
+  err_msg.pos_error.z = controller_.getPosError()[2];
+  err_msg.vel_error.x = controller_.getVelError()[0];
+  err_msg.vel_error.y = controller_.getVelError()[1];
+  err_msg.vel_error.z = controller_.getVelError()[2];
+  cont_err_pub_->publish(err_msg);
+
   // kr_mav_msgs::SO3Command::Ptr so3_command = boost::make_shared<kr_mav_msgs::SO3Command>();
-  geometric_controller_ros::msg::SE3Command se3_cmd;
-  se3_cmd.header.stamp = this->now();
-  se3_cmd.header.frame_id = frame_id_;
-  se3_cmd.force.x = force(0);
-  se3_cmd.force.y = force(1);
-  se3_cmd.force.z = force(2);
-  se3_cmd.orientation.x = orientation.x();
-  se3_cmd.orientation.y = orientation.y();
-  se3_cmd.orientation.z = orientation.z();
-  se3_cmd.orientation.w = orientation.w();
-  se3_cmd.angular_velocity.x = ang_vel(0);
-  se3_cmd.angular_velocity.y = ang_vel(1);
-  se3_cmd.angular_velocity.z = ang_vel(2);
+  geometric_controller_ros::msg::SE3Command cmd_msg;
+  cmd_msg.header.stamp = this->now();
+  cmd_msg.header.frame_id = frame_id_;
+  cmd_msg.force.x = force(0);
+  cmd_msg.force.y = force(1);
+  cmd_msg.force.z = force(2);
+  cmd_msg.orientation.x = orientation.x();
+  cmd_msg.orientation.y = orientation.y();
+  cmd_msg.orientation.z = orientation.z();
+  cmd_msg.orientation.w = orientation.w();
+  cmd_msg.angular_velocity.x = ang_vel(0);
+  cmd_msg.angular_velocity.y = ang_vel(1);
+  cmd_msg.angular_velocity.z = ang_vel(2);
 
   // so3_command->aux.current_yaw = current_yaw_;
   // so3_command->aux.kf_correction = corrections_[0];
@@ -361,12 +375,12 @@ GeometricControlNode::publishSE3Command()
   // so3_command->aux.angle_corrections[1] = corrections_[2];
   // so3_command->aux.enable_motors = enable_motors_;
   // so3_command->aux.use_external_yaw = use_external_yaw_;
-  se3_command_pub_->publish(se3_cmd);
+  se3_command_pub_->publish(cmd_msg);
 
   geometry_msgs::msg::PoseStamped cmd_viz_msg;
 
 
-  cmd_viz_msg.header = se3_cmd.header;
+  cmd_viz_msg.header = cmd_msg.header;
   cmd_viz_msg.pose.position.x = des_pos_(0);
   cmd_viz_msg.pose.position.y = des_pos_(1);
   cmd_viz_msg.pose.position.z = des_pos_(2);

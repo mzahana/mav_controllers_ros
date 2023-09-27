@@ -45,9 +45,9 @@ def generate_launch_description():
         launch_arguments={'yaml_path': LaunchConfiguration('geometric_controller_yaml')}.items()
     )
 
-    # Include se3controller_to_mavros.launch.py
+    # Include geometric_to_mavros.launch.py
     geometric_to_mavros_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/se3controller_to_mavros.launch.py']),
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/geometric_to_mavros.launch.py']),
         launch_arguments={'param_file': LaunchConfiguration('geometric_mavros_yaml')}.items()
     )
 

@@ -147,8 +147,8 @@ private:
         double limited_yaw_rate = std::clamp(yaw_diff / seconds_duration, static_cast<double>(-max_yaw_rate_), static_cast<double>(max_yaw_rate_));
         double new_des_yaw = actual_yaw_+  limited_yaw_rate * seconds_duration;
 
-        msg->yaw = new_des_yaw;
-        msg->yaw_dot = limited_yaw_rate;
+        msg->yaw = 0.0; //new_des_yaw;
+        msg->yaw_dot = 0.0; //limited_yaw_rate;
 
         msg->kx = {0.0, 0.0, 0.0};
         msg->kv = {0.0, 0.0, 0.0};

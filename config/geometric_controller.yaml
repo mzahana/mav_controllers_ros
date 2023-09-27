@@ -4,13 +4,13 @@ geometric_controller_node:
     use_external_yaw: true
     gains:
       pos:
-        x: 10.0
-        y: 10.0
-        z: 20.0
+        x: 4.0
+        y: 4.0
+        z: 12.0
       vel:
-        x: 5.0
-        y: 5.0
-        z: 10.0
+        x: 3.0
+        y: 3.0
+        z: 6.0
       ki:
         x: 0.1
         y: 0.1
@@ -32,8 +32,8 @@ geometric_controller_node:
         x: 0.0
         y: 0.0
         z: 0.0
-    attctrl_tau: 0.3
+    attctrl_tau: 0.2
     max_pos_int: 1.0
     mas_pos_int_b: 1.0
     max_tilt_angle: 0.7853  # rad
-    max_accel: 20.0
+    max_accel: 10.0

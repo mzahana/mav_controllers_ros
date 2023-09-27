@@ -25,6 +25,8 @@ class GeometricAttitudeControl
   const Eigen::Vector3f &getComputedForce();
   const Eigen::Quaternionf &getComputedOrientation();
   const Eigen::Vector3f &getComputedAngularVelocity();
+  const Eigen::Vector3f &getPosError();
+  const Eigen::Vector3f &getVelError();
 
   void calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel, const Eigen::Vector3f &des_acc,
                         const Eigen::Vector3f &des_jerk, const float des_yaw, const float des_yaw_dot,
@@ -69,6 +71,9 @@ private:
   Eigen::Vector3f angular_velocity_;
   Eigen::Vector3f pos_int_;
   Eigen::Vector3f pos_int_b_;
+
+  // Errors
+  Eigen::Vector3f pos_err_, vel_err_;
 
   // If true, yaw will be computed internally
   bool velocity_yaw_;

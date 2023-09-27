@@ -23,6 +23,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetCommand.msg"
   "msg/SE3Command.msg"
+  "msg/ControlErrors.msg"
   DEPENDENCIES std_msgs builtin_interfaces geometry_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 

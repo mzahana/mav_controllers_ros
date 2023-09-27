@@ -91,6 +91,15 @@ const Eigen::Vector3f &GeometricAttitudeControl::getComputedAngularVelocity()
   return angular_velocity_;
 }
 
+const Eigen::Vector3f &GeometricAttitudeControl::getPosError()
+{
+  return pos_err_;
+}
+
+const Eigen::Vector3f &GeometricAttitudeControl::getVelError()
+{
+  return vel_err_;
+}
 
 void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel, const Eigen::Vector3f &des_acc,
                         const Eigen::Vector3f &des_jerk, const float des_yaw, const float des_yaw_dot,
@@ -133,11 +142,11 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
   const Eigen::Vector4f q_ref = acc2quaternion(a_ref - gravity_vec_, des_yaw);
   const Eigen::Matrix3f R_ref = quat2RotMatrix(q_ref);
 
-  const Eigen::Vector3f pos_error = pos_ - target_pos;
-  const Eigen::Vector3f vel_error = vel_ - target_vel;
+  pos_err_ = pos_ - target_pos;
+  vel_err_ = vel_ - target_vel;
 
   // Position Controller
-  const Eigen::Vector3f a_fb = poscontroller(pos_error, vel_error, kx, kv, ki, kib);
+  const Eigen::Vector3f a_fb = poscontroller(pos_err_, vel_err_, kx, kv, ki, kib);
 
   // Rotor Drag compensation
   const Eigen::Vector3f a_rd = R_ref * kd.asDiagonal() * R_ref.transpose() * target_vel;  // Rotor drag
