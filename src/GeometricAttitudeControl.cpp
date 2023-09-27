@@ -1,5 +1,20 @@
 #include "geometric_controller_ros/GeometricAttitudeControl.h"
 
+GeometricAttitudeControl::GeometricAttitudeControl()
+    : mass_(0.5),
+      g_(9.81),
+      max_pos_int_(0.5),
+      max_pos_int_b_(0.5),
+      current_orientation_q_(Eigen::Quaternionf::Identity()),
+      cos_max_tilt_angle_(-1.0)
+{
+}
+
+GeometricAttitudeControl::~GeometricAttitudeControl()
+{
+
+}
+
 void GeometricAttitudeControl::setMass(const float mass)
 {
   mass_ = mass;
@@ -8,7 +23,7 @@ void GeometricAttitudeControl::setMass(const float mass)
 void GeometricAttitudeControl::setGravity(const float g)
 {
   g_ = g; // this should be positive
-  gravity_vec_ = Eigen::Vector3d(0.0, 0.0, -g_);
+  gravity_vec_ = Eigen::Vector3f(0.0, 0.0, -g_);
 }
 
 void GeometricAttitudeControl::setPosition(const Eigen::Vector3f &position)
@@ -56,6 +71,11 @@ void GeometricAttitudeControl::setMaxAcceleration(const float max_acc)
   }
 }
 
+void GeometricAttitudeControl::setVelocityYaw(const bool vel_yaw)
+{
+  velocity_yaw_ = vel_yaw;
+}
+
 const Eigen::Vector3f &GeometricAttitudeControl::getComputedForce()
 {
   return force_;
@@ -85,8 +105,14 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
   else
     yaw_d = des_yaw;
 
+  // In this implementation, the gains need to be negated, but the will be passed as +ve numbers
+  auto Kx = -kx;
+  auto Kv = -kv;
+  auto Ki = -ki;
+  auto Kib = -ki_b;
+
   // Not used ??! des_yaw, des_yaw_dot, des_jerk !!
-  Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, kx, kv, ki, ki_b, kd);
+  Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, Kx, Kv, Ki, Kib, kd);
   force_ = mass_ * a_des; // in inertial frame
 
   // This updates angular_velocity_ and orientation_ (desired angular vel, and desired orientation)
@@ -143,10 +169,10 @@ void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des,
   orientation_.y() = q_des(2);
   orientation_.z() = q_des(3);
 
-  Eigen::Vector4d ratecmd;
-  Eigen::Matrix3d rotmat;    // Rotation matrix of current attitude
-  Eigen::Matrix3d rotmat_d;  // Rotation matrix of desired attitude
-  Eigen::Vector3d error_att;
+  Eigen::Vector4f ratecmd;
+  Eigen::Matrix3f rotmat;    // Rotation matrix of current attitude
+  Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
+  Eigen::Vector3f error_att;
 
   rotmat = quat2RotMatrix(current_orientation_vec_);
   rotmat_d = quat2RotMatrix(q_des);
@@ -208,64 +234,9 @@ Eigen::Vector4f GeometricAttitudeControl::acc2quaternion(const Eigen::Vector3f &
   return quat;
 }
 
-/////////////// Helper functions //////////////////
-// Ref: https://github.com/Jaeyoung-Lim/mavros_controllers/blob/master/geometric_controller/include/geometric_controller/common.h
-
-static Eigen::Matrix3f quat2RotMatrix(const Eigen::Vector4f &q) {
-    Eigen::Matrix3f rotmat;
-    rotmat << q(0) * q(0) + q(1) * q(1) - q(2) * q(2) - q(3) * q(3), 2 * q(1) * q(2) - 2 * q(0) * q(3),
-        2 * q(0) * q(2) + 2 * q(1) * q(3),
-
-        2 * q(0) * q(3) + 2 * q(1) * q(2), q(0) * q(0) - q(1) * q(1) + q(2) * q(2) - q(3) * q(3),
-        2 * q(2) * q(3) - 2 * q(0) * q(1),
-
-        2 * q(1) * q(3) - 2 * q(0) * q(2), 2 * q(0) * q(1) + 2 * q(2) * q(3),
-        q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
-    return rotmat;
-}
-
-static Eigen::Vector4f rot2Quaternion(const Eigen::Matrix3f &R) {
-  Eigen::Vector4f quat;
-  float tr = R.trace();
-  if (tr > 0.0) {
-    float S = sqrt(tr + 1.0) * 2.0;  // S=4*qw
-    quat(0) = 0.25 * S;
-    quat(1) = (R(2, 1) - R(1, 2)) / S;
-    quat(2) = (R(0, 2) - R(2, 0)) / S;
-    quat(3) = (R(1, 0) - R(0, 1)) / S;
-  } else if ((R(0, 0) > R(1, 1)) & (R(0, 0) > R(2, 2))) {
-    float S = sqrt(1.0 + R(0, 0) - R(1, 1) - R(2, 2)) * 2.0;  // S=4*qx
-    quat(0) = (R(2, 1) - R(1, 2)) / S;
-    quat(1) = 0.25 * S;
-    quat(2) = (R(0, 1) + R(1, 0)) / S;
-    quat(3) = (R(0, 2) + R(2, 0)) / S;
-  } else if (R(1, 1) > R(2, 2)) {
-    float S = sqrt(1.0 + R(1, 1) - R(0, 0) - R(2, 2)) * 2.0;  // S=4*qy
-    quat(0) = (R(0, 2) - R(2, 0)) / S;
-    quat(1) = (R(0, 1) + R(1, 0)) / S;
-    quat(2) = 0.25 * S;
-    quat(3) = (R(1, 2) + R(2, 1)) / S;
-  } else {
-    float S = sqrt(1.0 + R(2, 2) - R(0, 0) - R(1, 1)) * 2.0;  // S=4*qz
-    quat(0) = (R(1, 0) - R(0, 1)) / S;
-    quat(1) = (R(0, 2) + R(2, 0)) / S;
-    quat(2) = (R(1, 2) + R(2, 1)) / S;
-    quat(3) = 0.25 * S;
-  }
-  return quat;
-}
-
-static Eigen::Matrix3f matrix_hat(const Eigen::Vector3f &v) {
-  Eigen::Matrix3f m;
-  // Sanity checks on M
-  m << 0.0, -v(2), v(1), v(2), 0.0, -v(0), -v(1), v(0), 0.0;
-  return m;
-}
-
-static Eigen::Vector3f matrix_hat_inv(const Eigen::Matrix3f &m) {
-  Eigen::Vector3f v;
-  // TODO: Sanity checks if m is skew symmetric
-  v << m(7), m(2), m(3);
-  return v;
+void GeometricAttitudeControl::resetIntegrals()
+{
+  pos_int_ = Eigen::Vector3f::Zero();
+  pos_int_b_ = Eigen::Vector3f::Zero();
 }
 

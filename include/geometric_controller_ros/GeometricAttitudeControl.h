@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <iostream>
+#include "geometric_controller_ros/utils.h"
 class GeometricAttitudeControl
 {
  public:
@@ -17,6 +18,7 @@ class GeometricAttitudeControl
   void setMaxIntegralBody(const float max_integral_b);
   void setMaxAcceleration(const float max_acc);
   void setCurrentOrientation(const Eigen::Quaternionf &current_orientation);
+  void setVelocityYaw(const bool vel_yaw);
   void resetIntegrals();
   void setMaxTiltAngle(const float max_tilt_angle);
 
@@ -43,10 +45,10 @@ private:
                                 const Eigen::Vector3f &ki, 
                                   const Eigen::Vector3f &kib);
 
-  static Eigen::Matrix3f quat2RotMatrix(const Eigen::Vector4f &q);
-  static Eigen::Vector4f rot2Quaternion(const Eigen::Matrix3f &R);
-  static Eigen::Matrix3f matrix_hat(const Eigen::Vector3f &v);
-  static Eigen::Vector3f matrix_hat_inv(const Eigen::Matrix3f &m);
+  // Eigen::Matrix3f quat2RotMatrix(const Eigen::Vector4f &q);
+  // Eigen::Vector4f rot2Quaternion(const Eigen::Matrix3f &R);
+  // Eigen::Matrix3f matrix_hat(const Eigen::Vector3f &v);
+  // Eigen::Vector3f matrix_hat_inv(const Eigen::Matrix3f &m);
 
   // Inputs for the controller
   float mass_;
