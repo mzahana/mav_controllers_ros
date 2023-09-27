@@ -64,6 +64,8 @@ private:
 
   // void imu_callback(const sensor_msgs::Imu::ConstPtr &pose); /* No need ?!*/
 
+  rcl_interfaces::msg::SetParametersResult  param_callback(const std::vector<rclcpp::Parameter> & parameters);
+
   /*Publishers */
   rclcpp::Publisher<geometric_controller_ros::msg::SE3Command>::SharedPtr se3_command_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  odom_pose_pub_;  // For sending PoseStamped to firmware ??
@@ -74,8 +76,8 @@ private:
   rclcpp::Subscription<geometric_controller_ros::msg::TargetCommand>::SharedPtr target_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
-  // ros::Subscriber imu_sub_; /* Probably odom is sufficient ! */
-  // ros::Subscriber enable_motors_sub_, corrections_sub_;
+
+  OnSetParametersCallbackHandle::SharedPtr callback_handler_;
 
   
   GeometricAttitudeControl controller_; /* Geometric Controller object */
@@ -226,6 +228,10 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
 
   enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "geometric_controller/enable_motors", 10, std::bind(&GeometricControlNode::motorStateCallback, this, _1));
+
+  callback_handler_ = this->add_on_set_parameters_callback(std::bind(&GeometricControlNode::param_callback, this, std::placeholders::_1));
+
+
 }
 
 GeometricControlNode::~GeometricControlNode()
@@ -390,6 +396,80 @@ GeometricControlNode::publishSE3Command()
   cmd_viz_msg.pose.orientation.w = orientation.w();
   command_viz_pub_->publish(cmd_viz_msg);
 }
+
+rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(const std::vector<rclcpp::Parameter> & parameters)
+{
+  auto result = rcl_interfaces::msg::SetParametersResult();
+  result.successful = true;
+  for (auto parameter : parameters)
+  {
+    if(parameter.get_name() == "gains.pos.x")
+    {
+      config_kx_[0] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.pos.x  = %0.2f", config_kx_[0]);
+    }
+    if(parameter.get_name() == "gains.pos.y")
+    {
+      config_kx_[1] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.pos.y  = %0.2f", config_kx_[1]);
+    }
+    if(parameter.get_name() == "gains.pos.z")
+    {
+      config_kx_[2] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.pos.z  = %0.2f", config_kx_[2]);
+    }
+    if(parameter.get_name() == "gains.vel.x")
+    {
+      config_kv_[0] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.vel.x  = %0.2f", config_kv_[0]);
+    }
+    if(parameter.get_name() == "gains.vel.y")
+    {
+      config_kv_[1] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.vel.y  = %0.2f", config_kv_[1]);
+    }
+    if(parameter.get_name() == "gains.vel.z")
+    {
+      config_kv_[2] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.vel.z  = %0.2f", config_kv_[2]);
+    }
+    if(parameter.get_name() == "attctrl_tau")
+    {
+      config_attctrl_tau_ = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "attctrl_tau  = %0.2f", config_attctrl_tau_);
+    }
+    if(parameter.get_name() == "max_accel")
+    {
+      max_acc_ = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "max_accel  = %0.2f", max_acc_);
+      controller_.setMaxAcceleration(max_acc_);
+    }
+    if(parameter.get_name() == "max_tilt_angle")
+    {
+      float max_tolt_ang = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "max_tilt_angle  = %0.2f", max_tolt_ang);
+      controller_.setMaxTiltAngle(max_tolt_ang);
+    }
+    if(parameter.get_name() == "mass")
+    {
+      mass_ = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "mass  = %0.2f", mass_);
+      controller_.setMass(mass_);
+    }
+    if(parameter.get_name() == "use_external_yaw")
+    {
+      use_external_yaw_ = parameter.as_bool();
+      RCLCPP_INFO(this->get_logger(), "mass  = %d", use_external_yaw_);
+      controller_.setVelocityYaw(!use_external_yaw_);
+    }
+    
+    
+    
+  }
+
+  return result;
+}
+
 
 
 /**

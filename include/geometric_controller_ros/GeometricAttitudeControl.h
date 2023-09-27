@@ -47,11 +47,6 @@ private:
                                 const Eigen::Vector3f &ki, 
                                   const Eigen::Vector3f &kib);
 
-  // Eigen::Matrix3f quat2RotMatrix(const Eigen::Vector4f &q);
-  // Eigen::Vector4f rot2Quaternion(const Eigen::Matrix3f &R);
-  // Eigen::Matrix3f matrix_hat(const Eigen::Vector3f &v);
-  // Eigen::Vector3f matrix_hat_inv(const Eigen::Matrix3f &m);
-
   // Inputs for the controller
   float mass_;
   float g_;
