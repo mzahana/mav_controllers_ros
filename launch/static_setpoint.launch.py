@@ -9,10 +9,10 @@ def generate_launch_description():
             name='static_setpoint_test_node',
             output='screen',
             parameters=[
-                {'x': 1.0},
-                {'y': 2.0},
-                {'z': 3.0},
-                {'yaw': 0.5}
+                {'x': 0.0},
+                {'y': 0.0},
+                {'z': 2.0},
+                {'yaw': 0.0}
             ],
             remappings=[
                 ('se3controller/setpoint', 'geometric_controller/setpoint')  

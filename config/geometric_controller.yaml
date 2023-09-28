@@ -4,12 +4,12 @@ geometric_controller_node:
     use_external_yaw: true
     gains:
       pos:
-        x: 9.0
-        y: 9.0
-        z: 12.0
-      vel:
-        x: 5.0
+        x: 6.0
         y: 6.0
+        z: 8.0
+      vel:
+        x: 4.0
+        y: 4.0
         z: 6.0
       ki:
         x: 0.1
