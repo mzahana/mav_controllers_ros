@@ -95,8 +95,6 @@ ros2 run geometric_controller_ros se3_setpoint_test_node --ros-args -p x:=-1.0 -
 ```
 `x,y,z` are target positions.
 
-# Notes
-* This controller is partially tested in with PX4 SITL woth the `x500` quadcopter model. You will need to install PX4 and run the simulation using `make px4_sitl gz_x500`, and run the `mavros.launch.py` included in this package in addition to `mavros_interface.launch.py`.
 
 # Updates
 * Sept, 2023: Added nodes to publish some commands, static setpoint, and circular trajectory.
@@ -105,3 +103,4 @@ ros2 run geometric_controller_ros se3_setpoint_test_node --ros-args -p x:=-1.0 -
 
 # TODO
 * implement a node for trajectory generation ( infinity shape)
+* Test with actual drone.
