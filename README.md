@@ -99,8 +99,9 @@ ros2 run geometric_controller_ros se3_setpoint_test_node --ros-args -p x:=-1.0 -
 * This controller is partially tested in with PX4 SITL woth the `x500` quadcopter model. You will need to install PX4 and run the simulation using `make px4_sitl gz_x500`, and run the `mavros.launch.py` included in this package in addition to `mavros_interface.launch.py`.
 
 # Updates
-* Sept, 2023: Initial test with PX4 SITL using the `x500` quadopter model is working OK.
+* Sept, 2023: Added nodes to publish some commands, static setpoint, and circular trajectory.
+* Sept, 2023: Adding `GeometricAttitdeControl` class and corresponiding mavros interface nodes/config/launch files. This is based on `mavros_controllers` implementation with some modifications. This is tested with PX4 SITL with the `x500` model, and it works better thatn `SE3Controller`. The setpoints are attitude rates and thrust.
+* Sept, 2023: `SE3Controller` Initial test with PX4 SITL using the `x500` quadopter model is working OK, but with attitude and thrust setpoints. Attitude rate and thrust setpoints is not stable.
 
 # TODO
-* publish position and velocity errors for debugging and tuning the gains in `se3controller.yaml`
-* implement a node for trajectory generation (circle, infinity shape)
+* implement a node for trajectory generation ( infinity shape)
