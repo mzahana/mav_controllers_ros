@@ -23,6 +23,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetCommand.msg"
   "msg/SE3Command.msg"
+  "msg/ControlErrors.msg"
   DEPENDENCIES std_msgs builtin_interfaces geometry_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 
@@ -80,6 +81,58 @@ se3controller_node
 
 
 #
+# GeometricAttitudeControl.cpp
+#
+add_library(geometric_controller src/GeometricAttitudeControl.cpp)
+ament_target_dependencies(geometric_controller Eigen3)
+# this line to exports the library
+ament_export_targets(geometric_controller HAS_LIBRARY_TARGET)
+target_include_directories(geometric_controller
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${EIGEN3_INCLUDE_DIR}
+    )
+
+
+install(
+  TARGETS geometric_controller
+  EXPORT geometric_controller
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
+#
+# Geometric Attitude controller node
+#
+add_executable(geometric_controller_node src/geometric_attitude_control_node.cpp)
+ament_target_dependencies(geometric_controller_node
+                          nav_msgs
+                          geometry_msgs
+                          mavros_msgs
+                          tf2
+                          tf2_ros 
+                          tf2_geometry_msgs 
+                          rclcpp 
+                          Eigen3)
+
+target_link_libraries(geometric_controller_node geometric_controller)
+target_include_directories(geometric_controller_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(geometric_controller_node ${cpp_typesupport_target})
+
+
+install(TARGETS
+geometric_controller_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+#
 # SE3 controller MAVROS node
 #
 add_executable(se3controller_mavros_node src/se3controller_mavros_node.cpp)
@@ -108,18 +161,46 @@ install(TARGETS
 )
 
 #
-# fixed setpoint test node
+# Geometric controller MAVROS node
 #
-add_executable(se3_setpoint_test_node test/se3_setpoint_test.cpp)
-ament_target_dependencies(se3_setpoint_test_node rclcpp)
-target_include_directories(se3_setpoint_test_node
+add_executable(geometric_mavros_node src/geometric_mavros_node.cpp)
+ament_target_dependencies(geometric_mavros_node
+                          nav_msgs
+                          geometry_msgs
+                          mavros_msgs
+                          tf2
+                          tf2_ros 
+                          tf2_geometry_msgs 
+                          rclcpp 
+                          Eigen3)
+
+# target_link_libraries(se3_controller_node se3controller)
+target_include_directories(geometric_mavros_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-rosidl_get_typesupport_target(cpp_typesupport_target_se3_setpoint_test ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(se3_setpoint_test_node ${cpp_typesupport_target_se3_setpoint_test})
+rosidl_get_typesupport_target(cpp_typesupport_target_geo_mavros ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(geometric_mavros_node ${cpp_typesupport_target_geo_mavros})
+
+
 install(TARGETS
-  se3_setpoint_test_node
+  geometric_mavros_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+#
+# fixed setpoint test node
+#
+add_executable(static_setpoint_test_node test/static_setpoint_test.cpp)
+ament_target_dependencies(static_setpoint_test_node rclcpp)
+target_include_directories(static_setpoint_test_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_get_typesupport_target(cpp_typesupport_target_static_setpoint_test ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(static_setpoint_test_node ${cpp_typesupport_target_static_setpoint_test})
+install(TARGETS
+  static_setpoint_test_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

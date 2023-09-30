@@ -7,7 +7,7 @@ using std::placeholders::_1;
 class TargetCommandPublisherNode : public rclcpp::Node
 {
 public:
-    TargetCommandPublisherNode() : Node("se3_setpoint_publisher_node")
+    TargetCommandPublisherNode() : Node("static_setpoint_publisher_node")
     {
         this->declare_parameter("x", 0.0f);
         x_ = this->get_parameter("x").get_parameter_value().get<float>();
