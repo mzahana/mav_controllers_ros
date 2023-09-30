@@ -3,7 +3,7 @@
 
 #include <Eigen/Dense>
 #include <iostream>
-#include "geometric_controller_ros/utils.h"
+#include "mav_controllers_ros/utils.h"
 class GeometricAttitudeControl
 {
  public:

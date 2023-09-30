@@ -10,7 +10,7 @@ def generate_launch_description():
 
     # Define the path to the default YAML file
     default_yaml_path = os.path.join(
-        get_package_share_directory('geometric_controller_ros'),
+        get_package_share_directory('mav_controllers_ros'),
         'config',
         'se3controller.yaml'
     )
@@ -24,7 +24,7 @@ def generate_launch_description():
 
     # Define the node
     se3controller_node = Node(
-        package='geometric_controller_ros',
+        package='mav_controllers_ros',
         executable='se3controller_node',
         name='se3controller_node',
         output='screen',

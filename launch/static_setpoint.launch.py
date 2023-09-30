@@ -32,7 +32,7 @@ def generate_launch_description():
         z_arg,
         yaw_arg,
         Node(
-            package='geometric_controller_ros',  
+            package='mav_controllers_ros',  
             executable='static_setpoint_test_node',
             name='static_setpoint_test_node',
             output='screen',

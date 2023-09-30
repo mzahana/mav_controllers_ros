@@ -1,5 +1,5 @@
-#include <geometric_controller_ros/GeometricAttitudeControl.h>
-#include "geometric_controller_ros/msg/se3_command.hpp"
+#include <mav_controllers_ros/GeometricAttitudeControl.h>
+#include "mav_controllers_ros/msg/se3_command.hpp"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -31,9 +31,9 @@ public:
 private:
   /*
   @brief ROS callback to receive SE3 commands and publish it as a mavros setpoint
-  @param msg geometric_controller_ros::msg::SE3Command
+  @param msg mav_controllers_ros::msg::SE3Command
   */
-  void cmdCallback(const geometric_controller_ros::msg::SE3Command & msg);
+  void cmdCallback(const mav_controllers_ros::msg::SE3Command & msg);
 
   /*
   @brief ROS callback to receive odometry
@@ -58,7 +58,7 @@ private:
   */
   void publishMotorState();
 
-  rclcpp::Subscription<geometric_controller_ros::msg::SE3Command>::SharedPtr se3_cmd_sub_;
+  rclcpp::Subscription<mav_controllers_ros::msg::SE3Command>::SharedPtr se3_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_sub_;
@@ -75,7 +75,7 @@ private:
 
   double se3_cmd_timeout_;
   rclcpp::Time last_se3_cmd_time_;
-  geometric_controller_ros::msg::SE3Command last_se3_cmd_;
+  mav_controllers_ros::msg::SE3Command last_se3_cmd_;
 
   rclcpp::Clock::SharedPtr clock_ = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
   
@@ -186,7 +186,7 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
   attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
   motors_state_pub_ = this->create_publisher<std_msgs::msg::Bool>("geometric_controller/enable_motors", 10);
 
-  se3_cmd_sub_ = this->create_subscription<geometric_controller_ros::msg::SE3Command>(
+  se3_cmd_sub_ = this->create_subscription<mav_controllers_ros::msg::SE3Command>(
     "geometric_controller/cmd", 10, std::bind(&SE3ControllerToMavros::cmdCallback, this, _1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -214,7 +214,7 @@ SE3ControllerToMavros::mavrosStateCallback(const mavros_msgs::msg::State & msg)
 }
 
 void
-SE3ControllerToMavros::cmdCallback(const geometric_controller_ros::msg::SE3Command & msg)
+SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & msg)
 {
 
   // both imu_q_ and odom_q_ would be uninitialized if not set
@@ -348,7 +348,7 @@ SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
   if(so3_cmd_set_ && ( dt >= se3_cmd_timeout_))
   {
     RCLCPP_INFO(this->get_logger(), "so3_cmd timeout. %f seconds since last command", dt);
-    const auto last_se3_cmd_ptr = boost::make_shared<geometric_controller_ros::msg::SE3Command>(last_se3_cmd_);
+    const auto last_se3_cmd_ptr = boost::make_shared<mav_controllers_ros::msg::SE3Command>(last_se3_cmd_);
 
     // so3_cmd_callback(last_se3_cmd_ptr);
     cmdCallback(last_se3_cmd_);

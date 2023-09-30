@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='geometric_controller_ros',
+            package='mav_controllers_ros',
             executable='circular_trajectory_node',
             name='circular_trajectory_node',
             output='screen',

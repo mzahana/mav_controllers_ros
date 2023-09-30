@@ -1,4 +1,4 @@
-#include "geometric_controller_ros/GeometricAttitudeControl.h"
+#include "mav_controllers_ros/GeometricAttitudeControl.h"
 
 GeometricAttitudeControl::GeometricAttitudeControl()
     : mass_(0.5),

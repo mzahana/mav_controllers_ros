@@ -9,13 +9,13 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     # Paths to the default YAML config files
     default_geometric_yaml = os.path.join(
-        get_package_share_directory('geometric_controller_ros'),
+        get_package_share_directory('mav_controllers_ros'),
         'config',
         'geometric_controller.yaml'
     )
     
     default_geometric_mavros_yaml = os.path.join(
-        get_package_share_directory('geometric_controller_ros'),
+        get_package_share_directory('mav_controllers_ros'),
         'config',
         'geometric_mavros.yaml'
     )

@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include "geometric_controller_ros/msg/target_command.hpp"
+#include "mav_controllers_ros/msg/target_command.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -21,14 +21,14 @@ public:
         this->declare_parameter("yaw", 0.0f);
         yaw_ = this->get_parameter("yaw").get_parameter_value().get<float>();
 
-        publisher_ = this->create_publisher<geometric_controller_ros::msg::TargetCommand>("se3controller/setpoint", 10);
+        publisher_ = this->create_publisher<mav_controllers_ros::msg::TargetCommand>("se3controller/setpoint", 10);
         timer_ = this->create_wall_timer(20ms, std::bind(&TargetCommandPublisherNode::publishMessage, this));
     }
 
 private:
     void publishMessage()
     {
-        auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
+        auto msg = std::make_unique<mav_controllers_ros::msg::TargetCommand>();
 
         // Fill in your fixed values here
         msg->position.x = x_;
@@ -55,7 +55,7 @@ private:
     // target positions
     float x_, y_, z_, yaw_;
 
-    rclcpp::Publisher<geometric_controller_ros::msg::TargetCommand>::SharedPtr publisher_;
+    rclcpp::Publisher<mav_controllers_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 

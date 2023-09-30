@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include "geometric_controller_ros/msg/target_command.hpp"
+#include "mav_controllers_ros/msg/target_command.hpp"
 #include <cmath>
 #include <std_msgs/msg/bool.hpp>
 #include "mavros_msgs/msg/state.hpp"
@@ -37,7 +37,7 @@ public:
         this->declare_parameter("max_yaw_rate", 0.05f);
         max_yaw_rate_ = this->get_parameter("max_yaw_rate").get_parameter_value().get<float>();
 
-        publisher_ = this->create_publisher<geometric_controller_ros::msg::TargetCommand>("se3controller/setpoint", 10);
+        publisher_ = this->create_publisher<mav_controllers_ros::msg::TargetCommand>("se3controller/setpoint", 10);
         timer_ = this->create_wall_timer(publish_duration_, std::bind(&CircularTrajectoryPublisherNode::publishMessage, this));
 
         start_time_ = this->now();
@@ -95,7 +95,7 @@ private:
 
     void publishMessage()
     {
-        auto msg = std::make_unique<geometric_controller_ros::msg::TargetCommand>();
+        auto msg = std::make_unique<mav_controllers_ros::msg::TargetCommand>();
         if(!enable_motors_ or !offboard_mode_)
         {
             RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
@@ -158,7 +158,7 @@ private:
     }
 
     float x_center_, y_center_, z_, radius_, speed_, max_yaw_rate_;
-    rclcpp::Publisher<geometric_controller_ros::msg::TargetCommand>::SharedPtr publisher_;
+    rclcpp::Publisher<mav_controllers_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
     std::chrono::milliseconds publish_duration_;
 

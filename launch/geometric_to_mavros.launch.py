@@ -9,7 +9,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     # Path to the default YAML config file
     default_param_file = os.path.join(
-        get_package_share_directory('geometric_controller_ros'),
+        get_package_share_directory('mav_controllers_ros'),
         'config',
         'geometric_mavros.yaml'
     )
@@ -23,7 +23,7 @@ def generate_launch_description():
 
     # Node configuration
     geometric_to_mavros_node = Node(
-        package='geometric_controller_ros',
+        package='mav_controllers_ros',
         executable='geometric_mavros_node',
         name='geometric_mavros_node',
         namespace='',
