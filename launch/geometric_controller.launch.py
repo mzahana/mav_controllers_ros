@@ -32,7 +32,8 @@ def generate_launch_description():
         remappings=[
             ('geometric_controller/setpoint', 'geometric_controller/setpoint'),
             ('geometric_controller/odom', 'mavros/local_position/odom'),
-            ('geometric_controller/enable_motors', 'geometric_controller/enable_motors')
+            ('geometric_controller/enable_motors', 'geometric_controller/enable_motors'),
+            ('geometric_controller/multi_dof_setpoint', 'geometric_controller/multi_dof_setpoint')
         ]
     )
 

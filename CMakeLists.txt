@@ -194,7 +194,7 @@ install(TARGETS
 # fixed setpoint test node
 #
 add_executable(static_setpoint_test_node test/static_setpoint_test.cpp)
-ament_target_dependencies(static_setpoint_test_node rclcpp)
+ament_target_dependencies(static_setpoint_test_node rclcpp trajectory_msgs tf2 tf2_ros tf2_geometry_msgs)
 target_include_directories(static_setpoint_test_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

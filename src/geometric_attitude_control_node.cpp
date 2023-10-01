@@ -350,13 +350,30 @@ GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJ
 
   des_yaw_dot_ = msg.points[0].velocities[0].angular.z;
 
-  tf2::Quaternion quat;
+  tf2::Quaternion quat(msg.points[0].transforms[0].rotation.x,
+                        msg.points[0].transforms[0].rotation.y,
+                        msg.points[0].transforms[0].rotation.z,
+                        msg.points[0].transforms[0].rotation.w);
   tf2::Matrix3x3 m(quat);
   // tf2::convert(msg.points[0].transforms[0].rotation, quat);
   double roll, pitch, yaw;
   m.getRPY(roll, pitch, yaw);
 
   des_yaw_ = yaw;
+
+  // Check use_msg_gains_flag to decide whether to use gains from the msg or config
+  kx_[0] = config_kx_[0];
+  kx_[1] = config_kx_[1];
+  kx_[2] = config_kx_[2];
+  kv_[0] = config_kv_[0];
+  kv_[1] = config_kv_[1];
+  kv_[2] = config_kv_[2];
+
+  kd_[0] = config_kd_[0];
+  kd_[1] = config_kd_[1];
+  kd_[2] = config_kd_[2];
+
+  attctrl_tau_ = config_attctrl_tau_;
 
   position_cmd_updated_ = true;
 
