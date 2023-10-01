@@ -13,6 +13,7 @@ find_package(nav_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -112,6 +113,7 @@ ament_target_dependencies(geometric_controller_node
                           nav_msgs
                           geometry_msgs
                           mavros_msgs
+                          trajectory_msgs
                           tf2
                           tf2_ros 
                           tf2_geometry_msgs 
@@ -170,7 +172,7 @@ ament_target_dependencies(geometric_mavros_node
                           mavros_msgs
                           tf2
                           tf2_ros 
-                          tf2_geometry_msgs 
+                          tf2_geometry_msgs
                           rclcpp 
                           Eigen3)
 

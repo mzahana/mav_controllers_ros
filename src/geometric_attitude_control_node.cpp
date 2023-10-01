@@ -10,10 +10,14 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include "mavros_msgs/msg/attitude_target.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include "mav_controllers_ros/msg/control_errors.hpp"
+#include <trajectory_msgs/msg/multi_dof_joint_trajectory.hpp>
+
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -57,6 +61,12 @@ private:
   void targetCmdCallback(const mav_controllers_ros::msg::TargetCommand & msg);
 
   /*
+  @brief Defines controller setpoints from trajectory_msgs::msg::MultiDOFJointTrajectory
+  @param msg trajectory_msgs::msg::MultiDOFJointTrajectory
+  */
+  void multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJointTrajectory& msg);
+
+  /*
   @brief Odometry ROS callback to receive linear and rotational measurements
   @param msg nav_msgs::msg::Odometry
   */
@@ -76,6 +86,7 @@ private:
   rclcpp::Subscription<mav_controllers_ros::msg::TargetCommand>::SharedPtr target_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_motor_sub_;
+  rclcpp::Subscription<trajectory_msgs::msg::MultiDOFJointTrajectory>::SharedPtr multi_dof_traj_sub_;
 
   OnSetParametersCallbackHandle::SharedPtr callback_handler_;
 
@@ -229,6 +240,9 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   enable_motor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "geometric_controller/enable_motors", 10, std::bind(&GeometricControlNode::motorStateCallback, this, _1));
 
+  multi_dof_traj_sub_ = this->create_subscription<trajectory_msgs::msg::MultiDOFJointTrajectory>(
+      "geometric_controller/multi_dof_setpoint", 10, std::bind(&GeometricControlNode::multiDofTrajCallback, this, _1));
+
   callback_handler_ = this->add_on_set_parameters_callback(std::bind(&GeometricControlNode::param_callback, this, std::placeholders::_1));
 
 
@@ -317,6 +331,38 @@ GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCo
 
   publishSE3Command();
 }
+
+void
+GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJointTrajectory& msg)
+{
+  des_pos_ = Eigen::Vector3f(msg.points[0].transforms[0].translation.x,
+                              msg.points[0].transforms[0].translation.y,
+                              msg.points[0].transforms[0].translation.z);
+  des_vel_ = Eigen::Vector3f(msg.points[0].velocities[0].linear.x,
+                              msg.points[0].velocities[0].linear.y,
+                              msg.points[0].velocities[0].linear.z);
+
+  des_acc_ = Eigen::Vector3f(msg.points[0].accelerations[0].linear.x,
+                              msg.points[0].accelerations[0].linear.y,
+                              msg.points[0].accelerations[0].linear.z);
+
+  des_jrk_ = Eigen::Vector3f(0.0, 0.0, 0.0);
+
+  des_yaw_dot_ = msg.points[0].velocities[0].angular.z;
+
+  tf2::Quaternion quat;
+  tf2::Matrix3x3 m(quat);
+  // tf2::convert(msg.points[0].transforms[0].rotation, quat);
+  double roll, pitch, yaw;
+  m.getRPY(roll, pitch, yaw);
+
+  des_yaw_ = yaw;
+
+  position_cmd_updated_ = true;
+
+  publishSE3Command();
+
+  }
 
 
 void
