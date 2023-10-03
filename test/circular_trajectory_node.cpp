@@ -96,12 +96,12 @@ private:
     void publishMessage()
     {
         auto msg = std::make_unique<mav_controllers_ros::msg::TargetCommand>();
-        if(!enable_motors_ or !offboard_mode_)
-        {
-            RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
-            publisher_->publish(*msg);
-            return;
-        }
+        // if(!enable_motors_ or !offboard_mode_)
+        // {
+        //     RCLCPP_WARN(this->get_logger(), "Not armed, not OFFBOARD MODE. Not publishing setpoints");
+        //     publisher_->publish(*msg);
+        //     return;
+        // }
         if(!start_time_is_set_)
         {
             start_time_ = this->now();
@@ -140,14 +140,25 @@ private:
         // Compute the desired yaw based on the direction vector
         double desired_yaw = atan2(dir_y, dir_x);
 
+        double yaw_mod = fmod(
+        desired_yaw - actual_yaw_,
+        2 * M_PI);
+        if (yaw_mod < -M_PI) {
+            yaw_mod += 2 * M_PI;
+        } else if (yaw_mod > M_PI) {
+            yaw_mod -= 2 * M_PI;
+        }
+        desired_yaw = actual_yaw_ + yaw_mod;
+        // if((desired_yaw - actual_yaw_) > 0.2) desired_yaw = actual_yaw_+0.2;
+        RCLCPP_INFO(this->get_logger(), "des_yaw = %f0.2, actual_yaw = %0.2f", desired_yaw, actual_yaw_);
+        
+
         double yaw_diff = desired_yaw - actual_yaw_;
-        if (yaw_diff > M_PI) yaw_diff -= 2.0 * M_PI;
-        if (yaw_diff < -M_PI) yaw_diff += 2.0 * M_PI;
         double seconds_duration = static_cast<double>(publish_duration_.count()) / 1000.0;
         double limited_yaw_rate = std::clamp(yaw_diff / seconds_duration, static_cast<double>(-max_yaw_rate_), static_cast<double>(max_yaw_rate_));
         double new_des_yaw = actual_yaw_+  limited_yaw_rate * seconds_duration;
 
-        msg->yaw = 0.0; //new_des_yaw;
+        msg->yaw = new_des_yaw; //new_des_yaw;
         msg->yaw_dot = 0.0; //limited_yaw_rate;
 
         msg->kx = {0.0, 0.0, 0.0};
@@ -157,6 +168,8 @@ private:
         publisher_->publish(*msg);
     }
 
+    // Declarations
+    
     float x_center_, y_center_, z_, radius_, speed_, max_yaw_rate_;
     rclcpp::Publisher<mav_controllers_ros::msg::TargetCommand>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;

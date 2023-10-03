@@ -120,6 +120,8 @@ private:
   float mass_;
   const float g_;
   float max_acc_;
+
+  float yaw_gain_;
 };
 
 //////////////// Class definitions ////////////////
@@ -220,6 +222,10 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   this->declare_parameter("max_tilt_angle", static_cast<float>(M_PI));
   max_tilt_angle = this->get_parameter("max_tilt_angle").get_parameter_value().get<float>();
   controller_.setMaxTiltAngle(max_tilt_angle);
+
+  this->declare_parameter("yaw_gain", 0.3);
+  yaw_gain_ = this->get_parameter("yaw_gain").get_parameter_value().get<float>();
+  controller_.setYawGain(yaw_gain_);
 
 
   controller_.resetIntegrals();
@@ -350,16 +356,12 @@ GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJ
 
   des_yaw_dot_ = msg.points[0].velocities[0].angular.z;
 
-  tf2::Quaternion quat(msg.points[0].transforms[0].rotation.x,
+  Eigen::Quaternionf quat(msg.points[0].transforms[0].rotation.x,
                         msg.points[0].transforms[0].rotation.y,
                         msg.points[0].transforms[0].rotation.z,
                         msg.points[0].transforms[0].rotation.w);
-  tf2::Matrix3x3 m(quat);
-  // tf2::convert(msg.points[0].transforms[0].rotation, quat);
-  double roll, pitch, yaw;
-  m.getRPY(roll, pitch, yaw);
-
-  des_yaw_ = yaw;
+  Eigen::Vector3f rpy = Eigen::Matrix3f(quat).eulerAngles(0, 1, 2);  // RPY
+  des_yaw_ = rpy(2);
 
   // Check use_msg_gains_flag to decide whether to use gains from the msg or config
   kx_[0] = config_kx_[0];
@@ -524,6 +526,12 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
       use_external_yaw_ = parameter.as_bool();
       RCLCPP_INFO(this->get_logger(), "mass  = %d", use_external_yaw_);
       controller_.setVelocityYaw(!use_external_yaw_);
+    }
+    if(parameter.get_name() == "yaw_gain")
+    {
+      yaw_gain_ = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "yaw_gain_  = %d", yaw_gain_);
+      controller_.setYawGain(yaw_gain_);
     }
     
     

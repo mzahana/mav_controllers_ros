@@ -76,7 +76,7 @@ target_link_libraries(se3controller_node ${cpp_typesupport_target})
 
 
 install(TARGETS
-se3controller_node
+  se3controller_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -125,8 +125,8 @@ target_include_directories(geometric_controller_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(geometric_controller_node ${cpp_typesupport_target})
+rosidl_get_typesupport_target(cpp_typesupport_target_geo_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(geometric_controller_node ${cpp_typesupport_target_geo_node})
 
 
 install(TARGETS
@@ -194,7 +194,7 @@ install(TARGETS
 # fixed setpoint test node
 #
 add_executable(static_setpoint_test_node test/static_setpoint_test.cpp)
-ament_target_dependencies(static_setpoint_test_node rclcpp trajectory_msgs tf2 tf2_ros tf2_geometry_msgs)
+ament_target_dependencies(static_setpoint_test_node rclcpp trajectory_msgs nav_msgs tf2 tf2_ros tf2_geometry_msgs)
 target_include_directories(static_setpoint_test_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

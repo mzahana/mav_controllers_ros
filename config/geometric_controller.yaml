@@ -6,15 +6,15 @@ geometric_controller_node:
       pos:
         x: 4.0
         y: 4.0
-        z: 11.0
+        z: 15.0
       vel:
-        x: 3.0
-        y: 3.0
-        z: 4.0
+        x: 5.0
+        y: 5.0
+        z: 5.0
       ki:
-        x: 0.1
-        y: 0.1
-        z: 0.2
+        x: 0.0
+        y: 0.0
+        z: 0.0
       kib:
         x: 0.1
         y: 0.1
@@ -37,3 +37,4 @@ geometric_controller_node:
     mas_pos_int_b: 1.0
     max_tilt_angle: 0.7853  # rad
     max_accel: 10.0
+    yaw_gain: 0.6

@@ -6,7 +6,8 @@ GeometricAttitudeControl::GeometricAttitudeControl()
       max_pos_int_(0.5),
       max_pos_int_b_(0.5),
       current_orientation_q_(Eigen::Quaternionf::Identity()),
-      cos_max_tilt_angle_(-1.0)
+      cos_max_tilt_angle_(-1.0),
+      yaw_gain_(0.3)
 {
 }
 
@@ -76,6 +77,11 @@ void GeometricAttitudeControl::setVelocityYaw(const bool vel_yaw)
   velocity_yaw_ = vel_yaw;
 }
 
+void GeometricAttitudeControl::setYawGain(const float yaw_gain)
+{
+  yaw_gain_ = yaw_gain;
+}
+
 const Eigen::Vector3f &GeometricAttitudeControl::getComputedForce()
 {
   return force_;
@@ -126,6 +132,8 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
 
   // This updates angular_velocity_ and orientation_ (desired angular vel, and desired orientation)
   computeBodyRateCmd( a_des, yaw_d, attctrl_tau);
+  // attcontroller(a_des, yaw_d, attctrl_tau);
+  // reducedAttController(a_des, yaw_d, attctrl_tau);
 
 }
 
@@ -199,6 +207,66 @@ void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des,
   // bodyrate_cmd(3) =
   //     std::max(0.0, std::min(1.0, norm_thrust_const_ * thrust_command +
   //                                     norm_thrust_offset_));  // Calculate thrustcontroller_->getDesiredThrust()(3);
+}
+
+void GeometricAttitudeControl::attcontroller( Eigen::Vector3f& ref_acc, const float &des_yaw, const float &attctrl_tau)
+{
+  Eigen::Vector4f qe, q_inv, inverse;
+  inverse << 1.0, -1.0, -1.0, -1.0;
+  q_inv = inverse.asDiagonal() * current_orientation_vec_;
+  Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
+  orientation_.w() = q_des(0);
+  orientation_.x() = q_des(1);
+  orientation_.y() = q_des(2);
+  orientation_.z() = q_des(3);
+  qe = quatMultiplication(q_inv, q_des);
+  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
+  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
+  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
+}
+
+void GeometricAttitudeControl::reducedAttController( Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau)
+{
+  Eigen::Vector4f ratecmd;
+  Eigen::Vector4f qe, q_inv, inverse, qe_red, qe_red_inv, q_mix;
+  Eigen::Matrix3f rotmat, ref_rotmat;
+  Eigen::Vector3f zb, ebz, ecmdz, k_vec;
+  double alpha, alpha_mix;
+
+  Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
+  orientation_.w() = q_des(0);
+  orientation_.x() = q_des(1);
+  orientation_.y() = q_des(2);
+  orientation_.z() = q_des(3);
+
+  rotmat = quat2RotMatrix(current_orientation_vec_); //Current Orientation Rotation Matrix
+  ref_rotmat = quat2RotMatrix(q_des); //Command Orientation Rotation Matrix
+  // Full attitude controller  inverse << 1.0, -1.0, -1.0, -1.0;
+  q_inv = inverse.asDiagonal() * current_orientation_vec_;
+  qe = quatMultiplication(q_inv, q_des);
+
+  // Reduced attitude controller
+  ebz = rotmat.col(2);
+  ecmdz = ref_rotmat.col(2);
+  alpha = std::acos(ebz.dot(ecmdz));
+  k_vec = ebz.cross(ecmdz);
+  k_vec = k_vec.normalized();
+
+  qe_red << cos(alpha), std::sin(alpha) * k_vec(0), std::sin(alpha) * k_vec(1), std::sin(alpha) * k_vec(2); // Reduced error quaternion
+  qe_red_inv = inverse.asDiagonal() * qe_red;
+
+  q_mix = quatMultiplication(qe_red_inv, qe);
+  alpha_mix = std::acos(2*q_mix(0));
+  q_mix << std::cos(.5 * alpha_mix * yaw_gain_), 0, 0, std::sin(.5 * alpha_mix * yaw_gain_);
+
+  qe = quatMultiplication(qe_red, q_mix); //Update error quaternion to mixed reduced quaternion
+
+  // Mixing reduced and full attitude controller
+
+  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
+  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
+  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
+
 }
 
 Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &pos_error, const Eigen::Vector3f &vel_error, 

@@ -17,12 +17,12 @@ def generate_launch_description():
     )
     z_arg = DeclareLaunchArgument(
         'z',
-        default_value="2.0",
+        default_value="1.0",
         description='z setpoints in meter(s)'
     )
     yaw_arg = DeclareLaunchArgument(
         'yaw',
-        default_value="0.0",
+        default_value="0.8",
         description='yaw setpoints in radian'
     )
     
@@ -41,11 +41,13 @@ def generate_launch_description():
                 {'y': LaunchConfiguration('y')},
                 {'z': LaunchConfiguration('z')},
                 {'yaw': LaunchConfiguration('yaw')},
-                {'use_multi_dof_msg': True}
+                {'use_multi_dof_msg': False},
+                {'publish_rate_ms': 20},
+                {'max_yaw_rate': 0.5}
             ],
             remappings=[
                 ('se3controller/setpoint', 'geometric_controller/setpoint'),
-                ('se3controller/multi_dof_setpoint', 'multi_dof_wp') # Goe to the topic in go_to_waypoint_node in mav_trajectory_generation_ros2 pkg
+                ('se3controller/multi_dof_setpoint', 'multi_dof_wp') # Go to the topic in go_to_waypoint_node in mav_trajectory_generation_ros2 pkg
             ]
         )
     ])

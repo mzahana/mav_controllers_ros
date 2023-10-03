@@ -21,6 +21,7 @@ class GeometricAttitudeControl
   void setVelocityYaw(const bool vel_yaw);
   void resetIntegrals();
   void setMaxTiltAngle(const float max_tilt_angle);
+  void setYawGain(const float yaw_gain);
 
   const Eigen::Vector3f &getComputedForce();
   const Eigen::Quaternionf &getComputedOrientation();
@@ -41,11 +42,14 @@ private:
                                   const Eigen::Vector3f &kx, const Eigen::Vector3f &kv, const Eigen::Vector3f &ki, 
                                   const Eigen::Vector3f &kib, const Eigen::Vector3f &kd);
   void computeBodyRateCmd(const Eigen::Vector3f &a_des, const float &des_yaw, const float &attctrl_tau) ;
+  void attcontroller( Eigen::Vector3f& ref_acc, const float &des_yaw, const float &attctrl_tau);
   Eigen::Vector4f acc2quaternion(const Eigen::Vector3f &vector_acc, const float &yaw);
   Eigen::Vector3f poscontroller(const Eigen::Vector3f &pos_error, const Eigen::Vector3f &vel_error, 
                                 const Eigen::Vector3f &kx, const Eigen::Vector3f &kv,
                                 const Eigen::Vector3f &ki, 
                                   const Eigen::Vector3f &kib);
+  void reducedAttController(Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau);
+
 
   // Inputs for the controller
   float mass_;
@@ -72,6 +76,8 @@ private:
 
   // If true, yaw will be computed internally
   bool velocity_yaw_;
+
+  float yaw_gain_;
 };
 
 #endif
