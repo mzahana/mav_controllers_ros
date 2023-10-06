@@ -511,9 +511,9 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
     }
     if(parameter.get_name() == "max_tilt_angle")
     {
-      float max_tolt_ang = static_cast<float>(parameter.as_double());
-      RCLCPP_INFO(this->get_logger(), "max_tilt_angle  = %0.2f", max_tolt_ang);
-      controller_.setMaxTiltAngle(max_tolt_ang);
+      float max_tilt_ang = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "max_tilt_angle  = %0.2f", max_tilt_ang);
+      controller_.setMaxTiltAngle(max_tilt_ang);
     }
     if(parameter.get_name() == "mass")
     {
@@ -524,7 +524,7 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
     if(parameter.get_name() == "use_external_yaw")
     {
       use_external_yaw_ = parameter.as_bool();
-      RCLCPP_INFO(this->get_logger(), "mass  = %d", use_external_yaw_);
+      RCLCPP_INFO(this->get_logger(), "use_external_yaw_  = %d", use_external_yaw_);
       controller_.setVelocityYaw(!use_external_yaw_);
     }
     if(parameter.get_name() == "yaw_gain")

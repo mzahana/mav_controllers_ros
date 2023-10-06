@@ -268,7 +268,7 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
   tf2::Quaternion q_des_tf(q_des.x(), q_des.y(), q_des.z(), q_des.w());
   double des_roll, des_pitch, des_yaw;
   tf2::Matrix3x3(q_des_tf).getRPY(des_roll, des_pitch, des_yaw);
-  RCLCPP_INFO(this->get_logger(), "Current yaw= %0.2f, desired yaw = %0.2f", odom_yaw, des_yaw);
+  // RCLCPP_INFO(this->get_logger(), "Current yaw= %0.2f, desired yaw = %0.2f", odom_yaw, des_yaw);
 
   const float Psi = 0.5f * (3.0f - (R_des(0, 0) * R_cur(0, 0) + R_des(1, 0) * R_cur(1, 0) + R_des(2, 0) * R_cur(2, 0) +
                                     R_des(0, 1) * R_cur(0, 1) + R_des(1, 1) * R_cur(1, 1) + R_des(2, 1) * R_cur(2, 1) +
@@ -313,8 +313,9 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
   // publish messages
   mavros_msgs::msg::AttitudeTarget setpoint_msg;
   setpoint_msg.header = msg.header;
-  // Either use attitude+thrust OR rates+thrust. Here, we use rates+thrust (so, ignore attitude)
-  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE;//mavros_msgs::msg::AttitudeTarget::IGNORE_PITCH_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_ROLL_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_YAW_RATE;
+  // Either use attitude+thrust OR rates+thrust.
+  //mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE
+  setpoint_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE ;//mavros_msgs::msg::AttitudeTarget::IGNORE_PITCH_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_ROLL_RATE + mavros_msgs::msg::AttitudeTarget::IGNORE_YAW_RATE;
   setpoint_msg.orientation.w = q_des_transformed.w();
   setpoint_msg.orientation.x = q_des_transformed.x();
   setpoint_msg.orientation.y = q_des_transformed.y();

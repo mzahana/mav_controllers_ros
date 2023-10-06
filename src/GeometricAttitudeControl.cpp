@@ -126,7 +126,7 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
   auto Ki = -ki;
   auto Kib = -ki_b;
 
-  // Not used ??! des_yaw, des_yaw_dot, des_jerk !!
+  // Not used ??!  des_yaw_dot, des_jerk !!
   Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, Kx, Kv, Ki, Kib, kd);
   force_ = mass_ * a_des; // in inertial frame
 
@@ -165,15 +165,15 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
   Eigen::Vector3f a_des = acc_control - gravity_vec_;
 
   // Limit angle
-  float lambda = 1.0f;
-  if(Eigen::Vector3f::UnitZ().dot(a_des.normalized()) < cos_max_tilt_angle_)
-  {
-    const float x = acc_control.x(), y = acc_control.y(), z = acc_control.z();
-    const float cot_max_tilt_angle = cos_max_tilt_angle_ / std::sqrt(1 - cos_max_tilt_angle_ * cos_max_tilt_angle_);
-    lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
-    if(lambda > 0 && lambda <= 1)
-      a_des = lambda * acc_control + gravity_vec_;
-  }
+  // float lambda = 1.0f;
+  // if(Eigen::Vector3f::UnitZ().dot(a_des.normalized()) < cos_max_tilt_angle_)
+  // {
+  //   const float x = acc_control.x(), y = acc_control.y(), z = acc_control.z();
+  //   const float cot_max_tilt_angle = cos_max_tilt_angle_ / std::sqrt(1 - cos_max_tilt_angle_ * cos_max_tilt_angle_);
+  //   lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
+  //   if(lambda > 0 && lambda <= 1)
+  //     a_des = lambda * acc_control + gravity_vec_;
+  // }
 
   return a_des;
 }
@@ -242,7 +242,8 @@ void GeometricAttitudeControl::reducedAttController( Eigen::Vector3f &ref_acc, c
 
   rotmat = quat2RotMatrix(current_orientation_vec_); //Current Orientation Rotation Matrix
   ref_rotmat = quat2RotMatrix(q_des); //Command Orientation Rotation Matrix
-  // Full attitude controller  inverse << 1.0, -1.0, -1.0, -1.0;
+  // Full attitude controller  
+  inverse << 1.0, -1.0, -1.0, -1.0;
   q_inv = inverse.asDiagonal() * current_orientation_vec_;
   qe = quatMultiplication(q_inv, q_des);
 
@@ -279,7 +280,7 @@ void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, con
   // Z-axis of the current attitude
   Eigen::Vector3f ez_B = quat2RotMatrix(current_orientation_vec_).col(2);
   // the unit vector of the error quaternion of the reduced attitude Eq(45)
-  Eigen::Vector3f qe_k = ez_B.cross(ez_cmd_IB)/(ez_B.cross(ez_cmd_IB).norm());
+  Eigen::Vector3f qe_k = ez_B.cross(ez_cmd_IB);
   qe_k = qe_k.normalized();
   // Alpha angle Eq(46)
   float alpha = std::acos(ez_B.dot(ez_cmd_IB));
@@ -290,9 +291,9 @@ void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, con
             std::sin(alpha/2)*qe_k(1),
             std::sin(alpha/2)*qe_k(2);
 
-  Eigen::Vector4f q_cmd_red = quatMultiplication(current_orientation_vec_, qe_red); // Eq(54)
+  Eigen::Vector4f q_cmd_red = quatMultiplication(current_orientation_vec_, qe_red); // Eq(47)
 
-  Eigen::Matrix3f R_KI;
+  Eigen::Matrix3f R_KI; R_KI.setZero();
   R_KI(0,0) = std::cos(des_yaw); R_KI(0,1) = std::sin(des_yaw);
   R_KI(1,0) = -std::sin(des_yaw); R_KI(1,1) = std::cos(des_yaw);
   R_KI(2,2) = 1.0;
@@ -303,7 +304,7 @@ void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, con
   else
     pitch_cmd = 0.0;
 
-  Eigen::Matrix3f R_LK;
+  Eigen::Matrix3f R_LK; R_LK.setZero();
   R_LK(0,0) = std::cos(pitch_cmd); R_LK(0,2) = -std::sin(pitch_cmd);
   R_LK(1,1) = 1.0;
   R_LK(2,0) = std::sin(pitch_cmd); R_LK(2,2) = std::cos(pitch_cmd);
@@ -316,8 +317,8 @@ void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, con
  
   Eigen::Vector4f q_cmd_red_inv =  inverseQuaternion(q_cmd_red);
   Eigen::Vector4f q_mix = quatMultiplication(q_cmd_red_inv, q_cmd_full);
-  float alpha_mix = 2*std::cos(q_mix(0));
-  Eigen::Vector4f q_mix_p;
+  float alpha_mix = 2*std::acos(q_mix(0));
+  Eigen::Vector4f q_mix_p; q_mix_p.setZero();
   q_mix_p(0) = std::cos(yaw_gain_*alpha_mix/2);
   q_mix_p(3) = std::sin(yaw_gain_*alpha_mix/2);
 
