@@ -76,4 +76,31 @@ static Eigen::Vector4f quatMultiplication(Eigen::Vector4f& q, Eigen::Vector4f& p
     return quat;
 }
 
+static Eigen::Vector4f quatFromEulerZYX(float yaw, float pitch, float roll)
+{
+  float cy = std::cos(yaw * 0.5);
+  float sy = std::sin(yaw * 0.5);
+  float cp = std::cos(pitch * 0.5);
+  float sp = std::sin(pitch * 0.5);
+  float cr = std::cos(roll * 0.5);
+  float sr = std::sin(roll * 0.5);
+
+  Eigen::Vector4f q;
+
+  q(0) = cr * cp * cy + sr * sp * sy;  // w
+  q(1) = sr * cp * cy - cr * sp * sy;  // x
+  q(2) = cr * sp * cy + sr * cp * sy;  // y
+  q(3) = cr * cp * sy - sr * sp * cy;  // z
+
+  return q;
+}
+
+static Eigen::Vector4f inverseQuaternion(const Eigen::Vector4f& q) {
+    float magnitudeSquared = q.squaredNorm();
+    
+    Eigen::Vector4f qConjugate(q(0), -q(1), -q(2), -q(3));
+    
+    return qConjugate / magnitudeSquared;
+}
+
 #endif

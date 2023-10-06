@@ -49,6 +49,7 @@ private:
                                 const Eigen::Vector3f &ki, 
                                   const Eigen::Vector3f &kib);
   void reducedAttController(Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau);
+  void mixedAttController( Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau);
 
 
   // Inputs for the controller

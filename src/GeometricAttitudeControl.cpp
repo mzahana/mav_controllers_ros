@@ -134,6 +134,7 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
   computeBodyRateCmd( a_des, yaw_d, attctrl_tau);
   // attcontroller(a_des, yaw_d, attctrl_tau);
   // reducedAttController(a_des, yaw_d, attctrl_tau);
+  // mixedAttController(a_des, yaw_d, attctrl_tau);
 
 }
 
@@ -267,6 +268,74 @@ void GeometricAttitudeControl::reducedAttController( Eigen::Vector3f &ref_acc, c
   angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
   angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
 
+}
+
+void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau)
+{
+  // Using Ref: https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/154099/eth-7387-01.pdf?sequence=1&isAllowed=y
+  
+  // commanded z-zxis of body expressed in inertial frame Eq(43)
+  Eigen::Vector3f ez_cmd_IB = ref_acc/ref_acc.norm();
+  // Z-axis of the current attitude
+  Eigen::Vector3f ez_B = quat2RotMatrix(current_orientation_vec_).col(2);
+  // the unit vector of the error quaternion of the reduced attitude Eq(45)
+  Eigen::Vector3f qe_k = ez_B.cross(ez_cmd_IB)/(ez_B.cross(ez_cmd_IB).norm());
+  qe_k = qe_k.normalized();
+  // Alpha angle Eq(46)
+  float alpha = std::acos(ez_B.dot(ez_cmd_IB));
+  // Reduced error quaternion, Eq(45)
+  Eigen::Vector4f qe_red;
+  qe_red << std::cos(alpha/2),
+            std::sin(alpha/2)*qe_k(0),
+            std::sin(alpha/2)*qe_k(1),
+            std::sin(alpha/2)*qe_k(2);
+
+  Eigen::Vector4f q_cmd_red = quatMultiplication(current_orientation_vec_, qe_red); // Eq(54)
+
+  Eigen::Matrix3f R_KI;
+  R_KI(0,0) = std::cos(des_yaw); R_KI(0,1) = std::sin(des_yaw);
+  R_KI(1,0) = -std::sin(des_yaw); R_KI(1,1) = std::cos(des_yaw);
+  R_KI(2,2) = 1.0;
+  Eigen::Vector3f ez_cmd_KB = R_KI*ez_cmd_IB; // Eq(48)
+  float pitch_cmd;
+  if(ez_cmd_KB(2) != 0)
+    pitch_cmd = std::atan(ez_cmd_KB(0)/ez_cmd_KB(2)); // Eq(49)
+  else
+    pitch_cmd = 0.0;
+
+  Eigen::Matrix3f R_LK;
+  R_LK(0,0) = std::cos(pitch_cmd); R_LK(0,2) = -std::sin(pitch_cmd);
+  R_LK(1,1) = 1.0;
+  R_LK(2,0) = std::sin(pitch_cmd); R_LK(2,2) = std::cos(pitch_cmd);
+
+  Eigen::Vector3f ez_cmd_LB = R_LK*ez_cmd_KB; // Eq(50)
+
+  float roll_cmd = std::atan2(-ez_cmd_LB(1), ez_cmd_LB(2)); // Eq(51)
+
+  Eigen::Vector4f q_cmd_full = quatFromEulerZYX(des_yaw, pitch_cmd, roll_cmd); // Eq(52)
+ 
+  Eigen::Vector4f q_cmd_red_inv =  inverseQuaternion(q_cmd_red);
+  Eigen::Vector4f q_mix = quatMultiplication(q_cmd_red_inv, q_cmd_full);
+  float alpha_mix = 2*std::cos(q_mix(0));
+  Eigen::Vector4f q_mix_p;
+  q_mix_p(0) = std::cos(yaw_gain_*alpha_mix/2);
+  q_mix_p(3) = std::sin(yaw_gain_*alpha_mix/2);
+
+  Eigen::Vector4f q_cmd = quatMultiplication(q_cmd_red, q_mix_p); // Eq(54)
+
+  orientation_.w() = q_cmd(0);
+  orientation_.x() = q_cmd(1);
+  orientation_.y() = q_cmd(2);
+  orientation_.z() = q_cmd(3);
+
+  // Mixing reduced and full attitude controller
+  Eigen::Vector4f q_inv = inverseQuaternion(current_orientation_vec_);
+  Eigen::Vector4f qe = quatMultiplication(q_inv, q_cmd);
+
+  // Desired angular velocity Eq(23)
+  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
+  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
+  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
 }
 
 Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &pos_error, const Eigen::Vector3f &vel_error, 
