@@ -19,6 +19,9 @@ def generate_launch_description():
     config_yaml = LaunchConfiguration('config_yaml')
     fcu_protocol = LaunchConfiguration('fcu_protocol')
     mavros_namespace = LaunchConfiguration('mavros_namespace')
+    base_link_frame = LaunchConfiguration("base_link_frame")
+    odom_frame = LaunchConfiguration("odom_frame")
+    map_frame = LaunchConfiguration("map_frame")
 
     fcu_url_arg = DeclareLaunchArgument(
         'fcu_url',
@@ -74,6 +77,25 @@ def generate_launch_description():
         description="Node namespace"
     )
 
+    base_link_id_arg = DeclareLaunchArgument(
+        'base_link_frame',
+        default_value='base_link',
+        description="base_link frame id"
+    )
+
+    odom_id_arg = DeclareLaunchArgument(
+        'odom_frame',
+        default_value='odom',
+        description="odom frame id"
+    )
+
+    map_id_arg = DeclareLaunchArgument(
+        'map_frame',
+        default_value='map',
+        description="map frame id"
+    )
+
+
     # MAVROS node
     mavros_node = Node(
         namespace=mavros_namespace,
@@ -85,6 +107,9 @@ def generate_launch_description():
                 {'tgt_system': tgt_system},
                 {'tgt_component': tgt_component},
                 {'fcu_protocol': fcu_protocol},
+                {'base_link_frame_id': base_link_frame},
+                {'odom_frame_id': odom_frame},
+                {'map_frame_id': map_frame},
                 LaunchConfiguration('pluginlists_yaml'),
                 LaunchConfiguration('config_yaml')
         ]
@@ -100,5 +125,8 @@ def generate_launch_description():
     ld.add_action(pluginlists_yaml_arg)
     ld.add_action(config_yaml_arg)
     ld.add_action(mavros_node)
+    ld.add_action(base_link_id_arg)
+    ld.add_action(odom_id_arg)
+    ld.add_action(map_id_arg)
 
     return ld
