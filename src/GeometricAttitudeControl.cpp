@@ -107,6 +107,11 @@ const Eigen::Vector3f &GeometricAttitudeControl::getVelError()
   return vel_err_;
 }
 
+const Eigen::Vector3f &GeometricAttitudeControl::getAttitudeError()
+{
+  return att_err_;
+}
+
 void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel, const Eigen::Vector3f &des_acc,
                         const Eigen::Vector3f &des_jerk, const float des_yaw, const float des_yaw_dot,
                         const Eigen::Vector3f &kx, const Eigen::Vector3f &kv, const Eigen::Vector3f &ki,
@@ -165,15 +170,15 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
   Eigen::Vector3f a_des = acc_control - gravity_vec_;
 
   // Limit angle
-  // float lambda = 1.0f;
-  // if(Eigen::Vector3f::UnitZ().dot(a_des.normalized()) < cos_max_tilt_angle_)
-  // {
-  //   const float x = acc_control.x(), y = acc_control.y(), z = acc_control.z();
-  //   const float cot_max_tilt_angle = cos_max_tilt_angle_ / std::sqrt(1 - cos_max_tilt_angle_ * cos_max_tilt_angle_);
-  //   lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
-  //   if(lambda > 0 && lambda <= 1)
-  //     a_des = lambda * acc_control + gravity_vec_;
-  // }
+  float lambda = 1.0f;
+  if(Eigen::Vector3f::UnitZ().dot(a_des.normalized()) < cos_max_tilt_angle_)
+  {
+    const float x = acc_control.x(), y = acc_control.y(), z = acc_control.z();
+    const float cot_max_tilt_angle = cos_max_tilt_angle_ / std::sqrt(1 - cos_max_tilt_angle_ * cos_max_tilt_angle_);
+    lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
+    if(lambda > 0 && lambda <= 1)
+      a_des = lambda * acc_control + gravity_vec_;
+  }
 
   return a_des;
 }
@@ -190,13 +195,12 @@ void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des,
   Eigen::Vector4f ratecmd;
   Eigen::Matrix3f rotmat;    // Rotation matrix of current attitude
   Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
-  Eigen::Vector3f error_att;
 
   rotmat = quat2RotMatrix(current_orientation_vec_);
   rotmat_d = quat2RotMatrix(q_des);
 
-  error_att = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
-  angular_velocity_ = (2.0 / attctrl_tau) * error_att;
+  att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
+  angular_velocity_ = (2.0 / attctrl_tau) * att_err_;
 
   // const Eigen::Vector3d zb = rotmat.col(2);
   // desired_thrust_(0) = 0.0;
@@ -216,6 +220,14 @@ void GeometricAttitudeControl::attcontroller( Eigen::Vector3f& ref_acc, const fl
   inverse << 1.0, -1.0, -1.0, -1.0;
   q_inv = inverse.asDiagonal() * current_orientation_vec_;
   Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
+  Eigen::Matrix3f rotmat;    // Rotation matrix of current attitude
+  Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
+
+  rotmat = quat2RotMatrix(current_orientation_vec_);
+  rotmat_d = quat2RotMatrix(q_des);
+
+  att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
+
   orientation_.w() = q_des(0);
   orientation_.x() = q_des(1);
   orientation_.y() = q_des(2);
@@ -235,12 +247,18 @@ void GeometricAttitudeControl::reducedAttController( Eigen::Vector3f &ref_acc, c
   double alpha, alpha_mix;
 
   Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
+  Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
+
+  rotmat = quat2RotMatrix(current_orientation_vec_);//Current Orientation Rotation Matrix
+  rotmat_d = quat2RotMatrix(q_des);
+
+  att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
+
   orientation_.w() = q_des(0);
   orientation_.x() = q_des(1);
   orientation_.y() = q_des(2);
   orientation_.z() = q_des(3);
 
-  rotmat = quat2RotMatrix(current_orientation_vec_); //Current Orientation Rotation Matrix
   ref_rotmat = quat2RotMatrix(q_des); //Command Orientation Rotation Matrix
   // Full attitude controller  
   inverse << 1.0, -1.0, -1.0, -1.0;

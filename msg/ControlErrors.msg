@@ -4,3 +4,5 @@ std_msgs/Header header
 geometry_msgs/Point pos_error
 # Velocity Error
 geometry_msgs/Point vel_error
+# Attitude errors
+geometry_msgs/Point att_error
