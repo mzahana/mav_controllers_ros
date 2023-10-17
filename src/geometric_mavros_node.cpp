@@ -17,6 +17,10 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include "mavros_msgs/msg/state.hpp"
 #include <std_msgs/msg/bool.hpp>
+#include "message_filters/subscriber.h"
+#include "message_filters/synchronizer.h"
+#include "message_filters/sync_policies/approximate_time.h"
+#include <geometry_msgs/msg/twist_stamped.hpp>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -51,7 +55,14 @@ private:
   @brief Mavros state msg to get arming state.
   @param msg mavros_msgs::msg::State
   */
- void mavrosStateCallback(const mavros_msgs::msg::State & msg);
+  void mavrosStateCallback(const mavros_msgs::msg::State & msg);
+
+  // this is to combine pose and twist in a singel odom msg
+  // Using mavros/local_position/odom seems to have transformation issues that makes the controller unstable
+  // but mavros/local_position/pose  and mavros/local_position/velocity_local works fine.
+  // Therefore, pose & twist are combined into a modified odom topic
+  void poseAndTwistCallback(const geometry_msgs::msg::PoseStamped::SharedPtr pose, const geometry_msgs::msg::TwistStamped::SharedPtr twist);
+    
 
   /*
   @brief Publish motors arming state to SE3 controller node
@@ -62,9 +73,18 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_sub_;
+  std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
+  std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>> twist_sub_;
+  std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<geometry_msgs::msg::PoseStamped, geometry_msgs::msg::TwistStamped>>> sync_;
 
   rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr attitude_raw_pub_; // publisher for mavros setpoints
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motors_state_pub_;
+  
+  // this is to combine pose and twist in a singel odom msg
+  // Using mavros/local_position/odom seems to have transformation issues that makes the controller unstable
+  // but mavros/local_position/pose  and mavros/local_position/velocity_local works fine.
+  // Therefore, pose & twist are combined into a modified odom topic
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
 
   bool odom_set_, imu_set_, so3_cmd_set_;
   Eigen::Quaterniond odom_q_, imu_q_;
@@ -185,6 +205,8 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
     
   attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
   motors_state_pub_ = this->create_publisher<std_msgs::msg::Bool>("geometric_controller/enable_motors", 10);
+  odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("geometric_mavros/combined_odometry", rclcpp::SensorDataQoS());
+  
 
   se3_cmd_sub_ = this->create_subscription<mav_controllers_ros::msg::SE3Command>(
     "geometric_controller/cmd", 10, std::bind(&SE3ControllerToMavros::cmdCallback, this, _1));
@@ -197,6 +219,13 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
 
   mavros_state_sub_ = this->create_subscription<mavros_msgs::msg::State>(
     "mavros/state", 10, std::bind(&SE3ControllerToMavros::mavrosStateCallback, this, _1));
+
+  pose_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>>(this, "geometric_mavros/pose", rclcpp::SensorDataQoS().get_rmw_qos_profile());
+  twist_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>>(this, "geometric_mavros/twist", rclcpp::SensorDataQoS().get_rmw_qos_profile());
+
+  typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::msg::PoseStamped, geometry_msgs::msg::TwistStamped> MySyncPolicy;
+  sync_ = std::make_shared<message_filters::Synchronizer<MySyncPolicy>>(MySyncPolicy(10), *pose_sub_, *twist_sub_);
+  sync_->registerCallback(&SE3ControllerToMavros::poseAndTwistCallback, this);
 }
 
 SE3ControllerToMavros::~SE3ControllerToMavros()
@@ -211,6 +240,55 @@ SE3ControllerToMavros::mavrosStateCallback(const mavros_msgs::msg::State & msg)
   std_msgs::msg::Bool motors_state_msg;
   motors_state_msg.data = motors_armed_;
   motors_state_pub_->publish(motors_state_msg);
+}
+
+void SE3ControllerToMavros::poseAndTwistCallback(const geometry_msgs::msg::PoseStamped::SharedPtr pose, const geometry_msgs::msg::TwistStamped::SharedPtr twist)
+{
+  // Ensure received data are approximately at the same time
+    // if (std::abs((pose->header.stamp - twist->header.stamp).nanoseconds()) > TIME_SYNC_THRESHOLD_NS)
+    // {
+    //     return;  // If time difference is above threshold, ignore this callback
+    // }
+
+  // Create Odometry message
+  nav_msgs::msg::Odometry odometry_msg;
+
+  odometry_msg.header = pose->header; // use the timestamp from one of the synchronized messages
+  odometry_msg.pose.pose = pose->pose;
+  odometry_msg.twist.twist = twist->twist;
+
+  odom_q_ = Eigen::Quaterniond(odometry_msg.pose.pose.orientation.w, odometry_msg.pose.pose.orientation.x,
+                          odometry_msg.pose.pose.orientation.y, odometry_msg.pose.pose.orientation.z);
+
+  // Publish the combined Odometry message
+  odom_pub_->publish(odometry_msg);
+
+  odom_set_ = true;
+}
+
+void
+SE3ControllerToMavros::odomCallback(const nav_msgs::msg::Odometry &msg)
+{
+  odom_q_ = Eigen::Quaterniond(msg.pose.pose.orientation.w, msg.pose.pose.orientation.x,
+                               msg.pose.pose.orientation.y, msg.pose.pose.orientation.z);
+  odom_set_ = true;
+}
+
+void
+SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
+{
+  imu_q_ = Eigen::Quaterniond(msg.orientation.w, msg.orientation.x, msg.orientation.y, msg.orientation.z);
+  imu_set_ = true;
+  
+  double dt = this->now().seconds() - last_se3_cmd_time_.seconds();
+  if(so3_cmd_set_ && ( dt >= se3_cmd_timeout_))
+  {
+    RCLCPP_INFO(this->get_logger(), "so3_cmd timeout. %f seconds since last command", dt);
+    const auto last_se3_cmd_ptr = boost::make_shared<mav_controllers_ros::msg::SE3Command>(last_se3_cmd_);
+
+    // so3_cmd_callback(last_se3_cmd_ptr);
+    cmdCallback(last_se3_cmd_);
+  }
 }
 
 void
@@ -334,30 +412,6 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
 
 }
 
-void
-SE3ControllerToMavros::odomCallback(const nav_msgs::msg::Odometry &msg)
-{
-  odom_q_ = Eigen::Quaterniond(msg.pose.pose.orientation.w, msg.pose.pose.orientation.x,
-                               msg.pose.pose.orientation.y, msg.pose.pose.orientation.z);
-  odom_set_ = true;
-}
-
-void
-SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
-{
-  imu_q_ = Eigen::Quaterniond(msg.orientation.w, msg.orientation.x, msg.orientation.y, msg.orientation.z);
-  imu_set_ = true;
-  
-  double dt = this->now().seconds() - last_se3_cmd_time_.seconds();
-  if(so3_cmd_set_ && ( dt >= se3_cmd_timeout_))
-  {
-    RCLCPP_INFO(this->get_logger(), "so3_cmd timeout. %f seconds since last command", dt);
-    const auto last_se3_cmd_ptr = boost::make_shared<mav_controllers_ros::msg::SE3Command>(last_se3_cmd_);
-
-    // so3_cmd_callback(last_se3_cmd_ptr);
-    cmdCallback(last_se3_cmd_);
-  }
-}
 
 /**
  * Main function

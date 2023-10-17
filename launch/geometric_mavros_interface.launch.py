@@ -34,9 +34,22 @@ def generate_launch_description():
     )
 
     # Include mavros.launch.py
+    file_name = 'config/px4_pluginlists.yaml'
+    package_share_directory = get_package_share_directory('mav_controllers_ros')
+    plugins_file_path = os.path.join(package_share_directory, file_name)
+    file_name = 'config/px4_config.yaml'
+    config_file_path = os.path.join(package_share_directory, file_name)
     mavros_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/mavros.launch.py']),
-        launch_arguments={'fcu_url': 'udp://:14540@127.0.0.1:14557'}.items()
+        launch_arguments={
+            'fcu_url': 'udp://:14540@127.0.0.1:14557',
+            'tgt_system': '1',
+            'pluginlists_yaml': plugins_file_path,
+            'config_yaml': config_file_path,
+            'base_link_frame': 'base_link',
+            'odom_frame': 'odom',
+            'map_frame': 'map'
+                          }.items()
     )
 
     # Include geometric_controller.launch.py

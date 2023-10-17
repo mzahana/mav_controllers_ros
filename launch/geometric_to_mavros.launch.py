@@ -30,10 +30,13 @@ def generate_launch_description():
         output='screen',
         parameters=[LaunchConfiguration('param_file')],
         remappings=[
-            ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'),
-            ('geometric_mavros/odom', 'mavros/local_position/odom'),
-            ('geometric_mavros/imu', 'mavros/imu/data'),
-            ('mavros/state', 'mavros/state')
+            ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'), # pub
+            ('geometric_mavros/combined_odometry', 'geometric_controller/odom'), # pub
+            ('geometric_mavros/odom', 'geometric_mavros/odom'), # sub
+            ('geometric_mavros/imu', 'mavros/imu/data'), # sub
+            ('mavros/state', 'mavros/state'), # sub
+            ('geometric_mavros/pose', 'mavros/local_position/pose'), # sub
+            ('geometric_mavros/twist', 'mavros/local_position/velocity_local'), # sub
         ]
     )
 

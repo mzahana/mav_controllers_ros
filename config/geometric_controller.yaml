@@ -4,17 +4,17 @@ geometric_controller_node:
     use_external_yaw: true
     gains:
       pos:
-        x: 4.0
-        y: 4.0
-        z: 15.0
+        x: 10.0
+        y: 10.0
+        z: 20.0
       vel:
         x: 5.0
         y: 5.0
-        z: 5.0
+        z: 10.0
       ki:
-        x: 0.0
-        y: 0.0
-        z: 0.0
+        x: 0.1
+        y: 0.1
+        z: 0.1
       kib:
         x: 0.1
         y: 0.1
@@ -37,4 +37,4 @@ geometric_controller_node:
     mas_pos_int_b: 1.0
     max_tilt_angle: 0.7853  # rad
     max_accel: 10.0
-    yaw_gain: 0.6
+    yaw_gain: 0.4 # For the reduced attitude controller

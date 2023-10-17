@@ -17,6 +17,7 @@
 #include <std_msgs/msg/bool.hpp>
 #include "mav_controllers_ros/msg/control_errors.hpp"
 #include <trajectory_msgs/msg/multi_dof_joint_trajectory.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 
 
 using namespace std::chrono_literals;
@@ -71,8 +72,6 @@ private:
   @param msg nav_msgs::msg::Odometry
   */
   void odomCallback(const nav_msgs::msg::Odometry & msg);
-
-  // void imu_callback(const sensor_msgs::Imu::ConstPtr &pose); /* No need ?!*/
 
   rcl_interfaces::msg::SetParametersResult  param_callback(const std::vector<rclcpp::Parameter> & parameters);
 
@@ -267,11 +266,10 @@ void GeometricControlNode::motorStateCallback(const std_msgs::msg::Bool & msg)
     enable_motors_ = false;
 }
 
+
 void
 GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
 {
-  have_odom_ = true;
-
   frame_id_ = msg.header.frame_id;
 
   const Eigen::Vector3f position(msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z);
@@ -294,6 +292,8 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
   controller_.setPosition(position);
   controller_.setVelocity(velocity);
   controller_.setCurrentOrientation(current_orientation_);
+  
+  have_odom_ = true;
 
   // if(position_cmd_init_)
   // {
@@ -307,6 +307,7 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
   //   position_cmd_updated_ = false;
   // }
 }
+
 
 void
 GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCommand & msg)
@@ -393,6 +394,7 @@ GeometricControlNode::publishSE3Command()
     return;
   }
 
+
   Eigen::Vector3f ki = Eigen::Vector3f::Zero();
   Eigen::Vector3f kib = Eigen::Vector3f::Zero();
   if(enable_motors_)
@@ -423,6 +425,9 @@ GeometricControlNode::publishSE3Command()
   err_msg.vel_error.x = controller_.getVelError()[0];
   err_msg.vel_error.y = controller_.getVelError()[1];
   err_msg.vel_error.z = controller_.getVelError()[2];
+  err_msg.att_error.x = controller_.getAttitudeError()[0];
+  err_msg.att_error.y = controller_.getAttitudeError()[1];
+  err_msg.att_error.z = controller_.getAttitudeError()[2];
   cont_err_pub_->publish(err_msg);
 
   // kr_mav_msgs::SO3Command::Ptr so3_command = boost::make_shared<kr_mav_msgs::SO3Command>();
@@ -540,8 +545,6 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
 
   return result;
 }
-
-
 
 /**
  * Main function

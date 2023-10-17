@@ -47,7 +47,8 @@ def generate_launch_description():
             ],
             remappings=[
                 ('se3controller/setpoint', 'geometric_controller/setpoint'),
-                ('se3controller/multi_dof_setpoint', 'multi_dof_wp') # Go to the topic in go_to_waypoint_node in mav_trajectory_generation_ros2 pkg
+                ('se3controller/multi_dof_setpoint', 'multi_dof_wp'), # Go to the topic in go_to_waypoint_node in mav_trajectory_generation_ros2 pkg
+                ('mavros/local_position/odom', 'mavros/local_position/odom')
             ]
         )
     ])

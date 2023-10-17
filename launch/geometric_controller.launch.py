@@ -30,10 +30,10 @@ def generate_launch_description():
         output='screen',
         parameters=[LaunchConfiguration('yaml_path')],
         remappings=[
-            ('geometric_controller/setpoint', 'geometric_controller/setpoint'),
-            ('geometric_controller/odom', 'mavros/local_position/odom'),
-            ('geometric_controller/enable_motors', 'geometric_controller/enable_motors'),
-            ('geometric_controller/multi_dof_setpoint', 'geometric_controller/multi_dof_setpoint')
+            ('geometric_controller/setpoint', 'geometric_controller/setpoint'), # sub
+            ('geometric_controller/odom', 'geometric_controller/odom'), # sub
+            ('geometric_controller/enable_motors', 'geometric_controller/enable_motors'), # sub
+            ('geometric_controller/multi_dof_setpoint', 'geometric_controller/multi_dof_setpoint'), # sub
         ]
     )
 

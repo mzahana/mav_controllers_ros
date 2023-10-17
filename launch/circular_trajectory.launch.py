@@ -15,7 +15,7 @@ def generate_launch_description():
                 {'radius': 1.0},
                 {'speed': 2.0},
                 {'publish_rate_ms': 10},
-                {'max_yaw_rate': 0.05}
+                {'max_yaw_rate': 20.0}
             ],
             remappings=[
                 ('se3controller/setpoint', 'geometric_controller/setpoint'),  # Replace 'new_topic_name' with your desired topic name
