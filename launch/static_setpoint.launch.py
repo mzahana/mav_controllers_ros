@@ -25,6 +25,12 @@ def generate_launch_description():
         default_value="0.8",
         description='yaw setpoints in radian'
     )
+
+    ns_arg = DeclareLaunchArgument(
+        'staticsetpoin_ns',
+        default_value="",
+        description='Naemspace'
+    )
     
     return LaunchDescription([
         x_arg,
@@ -35,6 +41,7 @@ def generate_launch_description():
             package='mav_controllers_ros',  
             executable='static_setpoint_test_node',
             name='static_setpoint_test_node',
+            namespace=LaunchConfiguration('staticsetpoin_ns'),
             output='screen',
             parameters=[
                 {'x': LaunchConfiguration('x')},

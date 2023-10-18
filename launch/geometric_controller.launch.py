@@ -19,7 +19,15 @@ def generate_launch_description():
     yaml_path_arg = DeclareLaunchArgument(
         'yaml_path',
         default_value=default_yaml_path,
-        description='Path to the YAML file with parameters for the SE3ControllerNode'
+        description='Path to the YAML file with parameters for the controller'
+    )
+
+    # Namespace
+    # If the namespace is not '', you need to adjust the yaml file to have the same namespace defined here
+    controller_ns_arg = DeclareLaunchArgument(
+        'controller_ns',
+        default_value='',
+        description='Namespace of the controller node'
     )
 
     # Define the node
@@ -27,6 +35,7 @@ def generate_launch_description():
         package='mav_controllers_ros',
         executable='geometric_controller_node',
         name='geometric_controller_node',
+        namespace=LaunchConfiguration('controller_ns'),
         output='screen',
         parameters=[LaunchConfiguration('yaml_path')],
         remappings=[
@@ -39,6 +48,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         yaml_path_arg,
+        controller_ns_arg,
         geometric_controller_node,
         LogInfo(msg=["Launching GeometricAttitudeControl with parameters from: ", LaunchConfiguration('yaml_path')]),
     ])

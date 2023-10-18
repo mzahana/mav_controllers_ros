@@ -1,8 +1,8 @@
 geometric_mavros_node:
   ros__parameters:
-    num_props: 4
-    kf: 1.0
+    num_props: 4 # not used
+    kf: 1.0 # not used
     max_thrust: 34.0
-    lin_cof_a: 1.0
-    lin_int_b: 0.0
+    lin_cof_a: 1.0 # not used
+    lin_int_b: 0.0 # not used
     se3_cmd_timeout: 0.25

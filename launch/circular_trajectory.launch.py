@@ -1,12 +1,20 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
+    ns_arg = DeclareLaunchArgument(
+        'circularsetpoin_ns',
+        default_value="",
+        description='Naemspace'
+    )
     return LaunchDescription([
         Node(
             package='mav_controllers_ros',
             executable='circular_trajectory_node',
             name='circular_trajectory_node',
+            namespace=LaunchConfiguration('circularsetpoin_ns'),
             output='screen',
             parameters=[
                 {'x_center': 0.0},
