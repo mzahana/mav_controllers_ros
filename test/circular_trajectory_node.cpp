@@ -37,6 +37,9 @@ public:
         this->declare_parameter("max_yaw_rate", 0.05f);
         max_yaw_rate_ = this->get_parameter("max_yaw_rate").get_parameter_value().get<float>();
 
+        this->declare_parameter("zero_yaw", false);
+        zero_yaw_ = this->get_parameter("zero_yaw").get_parameter_value().get<bool>();
+
         publisher_ = this->create_publisher<mav_controllers_ros::msg::TargetCommand>("se3controller/setpoint", 10);
         timer_ = this->create_wall_timer(publish_duration_, std::bind(&CircularTrajectoryPublisherNode::publishMessage, this));
 
@@ -158,7 +161,11 @@ private:
         double limited_yaw_rate = std::clamp(yaw_diff / seconds_duration, static_cast<double>(-max_yaw_rate_), static_cast<double>(max_yaw_rate_));
         double new_des_yaw = actual_yaw_+  limited_yaw_rate * seconds_duration;
 
-        msg->yaw = new_des_yaw;
+        
+        if(zero_yaw_)
+            msg->yaw = 0.0;
+        else
+            msg->yaw = new_des_yaw;
         msg->yaw_dot = 0.0; //limited_yaw_rate;
 
         msg->kx = {0.0, 0.0, 0.0};
@@ -186,6 +193,8 @@ private:
     double actual_yaw_ = 0.0;
     double current_drone_position_x_ = 0.0;
     double current_drone_position_y_ = 0.0;
+    
+    bool zero_yaw_;
 
 };
 
