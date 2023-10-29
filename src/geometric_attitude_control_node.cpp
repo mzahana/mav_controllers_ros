@@ -357,10 +357,10 @@ GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJ
 
   des_yaw_dot_ = msg.points[0].velocities[0].angular.z;
 
-  Eigen::Quaternionf quat(msg.points[0].transforms[0].rotation.x,
+  Eigen::Quaternionf quat(msg.points[0].transforms[0].rotation.w,
+                        msg.points[0].transforms[0].rotation.x,
                         msg.points[0].transforms[0].rotation.y,
-                        msg.points[0].transforms[0].rotation.z,
-                        msg.points[0].transforms[0].rotation.w);
+                        msg.points[0].transforms[0].rotation.z);
   Eigen::Vector3f rpy = Eigen::Matrix3f(quat).eulerAngles(0, 1, 2);  // RPY
   des_yaw_ = rpy(2);
 
