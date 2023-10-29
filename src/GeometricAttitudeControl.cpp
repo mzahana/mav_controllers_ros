@@ -133,6 +133,7 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
 
   // Not used ??!  des_yaw_dot, des_jerk !!
   Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, Kx, Kv, Ki, Kib, kd);
+  // std::cout << "a_des=\n" << a_des << "\n";
   force_ = mass_ * a_des; // in inertial frame
 
   // This updates angular_velocity_ and orientation_ (desired angular vel, and desired orientation)
@@ -152,15 +153,19 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
   // Compute BodyRate commands using differential flatness
   /// Controller based on Faessler 2017
   const Eigen::Vector3f a_ref = target_acc;
+  // std::cout << "a_ref=\n" << a_ref << "\n";
 
   const Eigen::Vector4f q_ref = acc2quaternion(a_ref - gravity_vec_, des_yaw);
   const Eigen::Matrix3f R_ref = quat2RotMatrix(q_ref);
 
   pos_err_ = pos_ - target_pos;
   vel_err_ = vel_ - target_vel;
+  // std::cout << "pos_err_=\n" << pos_err_ << "\n";
+  // std::cout << "vel_err_=\n" << vel_err_ << "\n";
 
   // Position Controller
   const Eigen::Vector3f a_fb = poscontroller(pos_err_, vel_err_, kx, kv, ki, kib);
+  // std::cout << "a_fb=\n" << a_fb << "\n";
 
   // Rotor Drag compensation
   const Eigen::Vector3f a_rd = R_ref * kd.asDiagonal() * R_ref.transpose() * target_vel;  // Rotor drag
@@ -364,7 +369,7 @@ Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &p
 {
   for(int i = 0; i < 3; i++)
   {
-    if(kx(i) != 0)
+    if(ki(i) != 0)
       pos_int_(i) += ki(i) * pos_error(i);
 
     // Limit integral term
@@ -373,6 +378,7 @@ Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &p
     else if(pos_int_(i) < -max_pos_int_)
       pos_int_(i) = -max_pos_int_;
   }
+  // std::cout << "pos_int_\n" << pos_int_ << "\n";
   Eigen::Vector3f a_fb =
       kx.asDiagonal() * pos_error + kv.asDiagonal() * vel_error + pos_int_;  // feedforward term for trajectory error
 
