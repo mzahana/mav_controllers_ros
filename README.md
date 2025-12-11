@@ -1,6 +1,6 @@
 # mav_controllers_ros
 The purpose of this repo is to provide a ROS2 implementation of multiple micro aerial vehicles (mav) controllers.
-Currently, it provides an implementation of DE3 and attitude geometric controllers.
+Currently, it provides an implementation of SE3 and attitude geometric controllers.
 The implementation of the controllers is general in the sense it is not implemented for a particular interface such as MAVROS. 
 For particular interface, a separate ROS 2 node is used. A MAVROS insterface is currently supported to be used with a PX4 autopilot.
 
