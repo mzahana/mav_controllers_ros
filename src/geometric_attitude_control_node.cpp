@@ -240,6 +240,13 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   controller_.setRateFeedforward(
       this->get_parameter("enable_rate_feedforward").get_parameter_value().get<bool>());
 
+  // Yaw attitude time constant; 0 (default) keeps yaw on attctrl_tau.
+  // Yaw authority is drag-torque only, so a slower value (e.g. 0.4-0.5)
+  // is typical once tuned.
+  this->declare_parameter("yawctrl_tau", 0.0f);
+  controller_.setYawCtrlTau(
+      this->get_parameter("yawctrl_tau").get_parameter_value().get<float>());
+
   float max_tilt_angle;
   this->declare_parameter("max_tilt_angle", static_cast<float>(M_PI));
   max_tilt_angle = this->get_parameter("max_tilt_angle").get_parameter_value().get<float>();
@@ -381,12 +388,11 @@ GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJ
 
   des_yaw_dot_ = msg.points[0].velocities[0].angular.z;
 
-  Eigen::Quaternionf quat(msg.points[0].transforms[0].rotation.w,
-                        msg.points[0].transforms[0].rotation.x,
-                        msg.points[0].transforms[0].rotation.y,
-                        msg.points[0].transforms[0].rotation.z);
-  Eigen::Vector3f rpy = Eigen::Matrix3f(quat).eulerAngles(0, 1, 2);  // RPY
-  des_yaw_ = rpy(2);
+  // Yaw straight from the quaternion (eulerAngles(0,1,2) can return the
+  // flipped representation (pi, pi, yaw-pi) and corrupt the reference)
+  const auto &rot = msg.points[0].transforms[0].rotation;
+  des_yaw_ = std::atan2(2.0f * static_cast<float>(rot.w * rot.z + rot.x * rot.y),
+                        1.0f - 2.0f * static_cast<float>(rot.y * rot.y + rot.z * rot.z));
 
   // Check use_msg_gains_flag to decide whether to use gains from the msg or config
   kx_[0] = config_kx_[0];
@@ -528,7 +534,8 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
     const bool gain_like = name.rfind("gains.", 0) == 0 || name.rfind("drag.", 0) == 0 ||
                            name == "attctrl_tau" || name == "max_accel" ||
                            name == "max_tilt_angle" || name == "mass" ||
-                           name == "max_pos_int" || name == "yaw_gain";
+                           name == "max_pos_int" || name == "yaw_gain" ||
+                           name == "yawctrl_tau";
     if(gain_like && parameter.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE)
     {
       const double v = parameter.as_double();
@@ -650,6 +657,12 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
       const bool en = parameter.as_bool();
       RCLCPP_INFO(this->get_logger(), "enable_rate_feedforward = %d", en);
       controller_.setRateFeedforward(en);
+    }
+    if(parameter.get_name() == "yawctrl_tau")
+    {
+      const float v = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "yawctrl_tau  = %0.3f", v);
+      controller_.setYawCtrlTau(v);
     }
   }
 

@@ -22,6 +22,12 @@ class GeometricAttitudeControl
   void resetIntegrals();
   void setMaxTiltAngle(const float max_tilt_angle);
   void setYawGain(const float yaw_gain);
+  // Yaw attitude-loop time constant [s]. The z (yaw) component of the
+  // attitude error is scaled by 2/yawctrl_tau instead of 2/attctrl_tau,
+  // decoupling heading bandwidth from tilt bandwidth (yaw authority is
+  // drag-torque only, so it is normally kept slower). <= 0 disables the
+  // split (yaw uses attctrl_tau).
+  void setYawCtrlTau(const float yawctrl_tau);
   // Enable body-rate feedforward computed from the desired jerk / yaw rate
   // (differential flatness). Improves agile trajectory tracking; has no
   // effect on hover/step behavior when the reference jerk is zero.
@@ -84,6 +90,7 @@ private:
   bool velocity_yaw_;
 
   float yaw_gain_;
+  float yawctrl_tau_;
 
   // Saturation state (acceleration clamp or tilt limit active on the last
   // cycle). While saturated, the integrator holds (conditional

@@ -33,6 +33,16 @@ convergence to upstream, plus the new behaviors below.
    `reducedAttController`, `mixedAttController`) — dead code kept in git
    history. Parameter validation on `setMass`/`setMaxAcceleration`.
 
+6b. **Decoupled yaw bandwidth** — new `yawctrl_tau` parameter (live-
+    settable): the body-z (yaw) component of the attitude error is scaled
+    by `2/yawctrl_tau` instead of `2/attctrl_tau`, so heading bandwidth
+    can be tuned (or relaxed — yaw authority is drag-torque only) without
+    detuning tilt. Default 0 keeps legacy behavior (yaw = attctrl_tau).
+6c. **Yaw reference extraction fixed** in `multiDofTrajCallback`: yaw now
+    comes from `atan2` on the quaternion directly; the previous
+    `eulerAngles(0,1,2)` could return the flipped representation
+    `(pi, pi, yaw-pi)` and corrupt the heading reference.
+
 ## geometric_attitude_control_node
 
 7. **Odometry staleness watchdog** (`odom_timeout`, default 0.3 s): if

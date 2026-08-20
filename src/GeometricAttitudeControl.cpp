@@ -10,6 +10,7 @@ GeometricAttitudeControl::GeometricAttitudeControl()
       pos_int_(Eigen::Vector3f::Zero()),
       velocity_yaw_(false),
       yaw_gain_(0.3),
+      yawctrl_tau_(0.0),
       saturated_(false),
       rate_ff_enabled_(false)
 {
@@ -88,6 +89,11 @@ void GeometricAttitudeControl::setYawGain(const float yaw_gain)
 void GeometricAttitudeControl::setRateFeedforward(const bool enable)
 {
   rate_ff_enabled_ = enable;
+}
+
+void GeometricAttitudeControl::setYawCtrlTau(const float yawctrl_tau)
+{
+  yawctrl_tau_ = yawctrl_tau;  // <= 0 -> yaw follows attctrl_tau
 }
 
 const Eigen::Vector3f &GeometricAttitudeControl::getComputedForce()
@@ -214,6 +220,9 @@ void GeometricAttitudeControl::computeBodyRateCmd(const Eigen::Vector3f &a_des, 
 
   att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
   angular_velocity_ = (2.0 / attctrl_tau) * att_err_;
+  // Decoupled yaw bandwidth: rescale the body-z (yaw) error component
+  if(yawctrl_tau_ > 0.0f)
+    angular_velocity_(2) = (2.0 / yawctrl_tau_) * att_err_(2);
 
   // Body-rate feedforward from differential flatness (Mellinger/Faessler):
   // for a trajectory with jerk j and total acceleration a (thrust axis
