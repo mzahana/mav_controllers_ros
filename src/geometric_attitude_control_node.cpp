@@ -1,4 +1,5 @@
 #include <mav_controllers_ros/GeometricAttitudeControl.h>
+#include <cmath>
 #include "mav_controllers_ros/msg/se3_command.hpp"
 #include "mav_controllers_ros/msg/target_command.hpp"
 #include <chrono>
@@ -92,8 +93,15 @@ private:
   
   GeometricAttitudeControl controller_; /* Geometric Controller object */
 
-  Eigen::Vector3f des_pos_, des_vel_, des_acc_, des_jrk_, config_kx_, config_kv_, config_ki_, config_kib_, config_kd_, kx_, kv_, kd_;
+  Eigen::Vector3f des_pos_, des_vel_, des_acc_, des_jrk_, config_kx_, config_kv_, config_ki_, config_kd_, kx_, kv_, kd_;
   float attctrl_tau_, config_attctrl_tau_;
+  // Watchdogs: reject control on stale odometry; reset integrals after a
+  // gap in the setpoint stream.
+  double odom_timeout_{0.3};
+  double setpoint_timeout_{1.0};
+  rclcpp::Time last_odom_time_;
+  rclcpp::Time last_control_time_;
+  bool have_control_time_{false};
   float des_yaw_, des_yaw_dot_;
   float current_yaw_;
   Eigen::Quaternionf current_orientation_;
@@ -134,7 +142,7 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
         enable_motors_(false),
         use_external_yaw_(false),
         have_odom_(false),
-        g_(9.81), 
+        g_(9.81),
         max_acc_(10.0)
 {
   /* Get params */
@@ -187,14 +195,21 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   this->declare_parameter("gains.ki.z", 0.0f);
   config_ki_[2] = this->get_parameter("gains.ki.z").get_parameter_value().get<float>();
 
+  // gains.kib.* are deprecated: the body-frame integral was never
+  // implemented (the accumulator was dead code). Accept the params so old
+  // configs still load, but warn if someone tries to use them.
   this->declare_parameter("gains.kib.x", 0.0f);
-  config_kib_[0] = this->get_parameter("gains.kib.x").get_parameter_value().get<float>();
-
   this->declare_parameter("gains.kib.y", 0.0f);
-  config_kib_[1] = this->get_parameter("gains.kib.y").get_parameter_value().get<float>();
-  
   this->declare_parameter("gains.kib.z", 0.0f);
-  config_kib_[2] = this->get_parameter("gains.kib.z").get_parameter_value().get<float>();
+  {
+    const float kib_x = this->get_parameter("gains.kib.x").get_parameter_value().get<float>();
+    const float kib_y = this->get_parameter("gains.kib.y").get_parameter_value().get<float>();
+    const float kib_z = this->get_parameter("gains.kib.z").get_parameter_value().get<float>();
+    if(kib_x != 0.0f || kib_y != 0.0f || kib_z != 0.0f)
+      RCLCPP_WARN(this->get_logger(),
+                  "gains.kib.* are deprecated and have NO effect (the body-frame "
+                  "integral was never implemented). Use gains.ki.* instead.");
+  }
 
   this->declare_parameter("drag.kd.x", 0.0f);
   config_kd_[0] = this->get_parameter("drag.kd.x").get_parameter_value().get<float>();
@@ -208,14 +223,22 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   this->declare_parameter("attctrl_tau", 0.3f);
   config_attctrl_tau_ = this->get_parameter("attctrl_tau").get_parameter_value().get<float>();
 
-  float max_pos_int, max_pos_int_b;
+  float max_pos_int;
   this->declare_parameter("max_pos_int", 0.5f);
   max_pos_int = this->get_parameter("max_pos_int").get_parameter_value().get<float>();
-  this->declare_parameter("mas_pos_int_b", 0.5f);
-  max_pos_int_b = this->get_parameter("mas_pos_int_b").get_parameter_value().get<float>();
+  this->declare_parameter("mas_pos_int_b", 0.5f);  // deprecated, kept so old configs load
 
   controller_.setMaxIntegral(max_pos_int);
-  controller_.setMaxIntegralBody(max_pos_int_b);
+
+  this->declare_parameter("odom_timeout", 0.3);
+  odom_timeout_ = this->get_parameter("odom_timeout").get_parameter_value().get<double>();
+
+  this->declare_parameter("setpoint_timeout", 1.0);
+  setpoint_timeout_ = this->get_parameter("setpoint_timeout").get_parameter_value().get<double>();
+
+  this->declare_parameter("enable_rate_feedforward", true);
+  controller_.setRateFeedforward(
+      this->get_parameter("enable_rate_feedforward").get_parameter_value().get<bool>());
 
   float max_tilt_angle;
   this->declare_parameter("max_tilt_angle", static_cast<float>(M_PI));
@@ -292,7 +315,8 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
   controller_.setPosition(position);
   controller_.setVelocity(velocity);
   controller_.setCurrentOrientation(current_orientation_);
-  
+
+  last_odom_time_ = this->now();
   have_odom_ = true;
 
   // if(position_cmd_init_)
@@ -390,27 +414,53 @@ GeometricControlNode::publishSE3Command()
 {
   if(!have_odom_)
   {
-    RCLCPP_WARN(this->get_logger(), "[publishSO3Command::publishSO3Command]: No odometry! Not publishing SO3Command.");
+    RCLCPP_WARN(this->get_logger(), "[publishSE3Command]: No odometry! Not publishing SE3Command.");
     return;
   }
 
+  const rclcpp::Time now = this->now();
+
+  // Never control on stale state: if odometry stopped, stop commanding.
+  // The downstream mavros/PX4 offboard-loss failsafe then takes over.
+  const double odom_age = (now - last_odom_time_).seconds();
+  if(odom_age > odom_timeout_)
+  {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                          "[publishSE3Command]: odometry is stale (%.2f s > %.2f s). "
+                          "Not publishing SE3Command.", odom_age, odom_timeout_);
+    controller_.resetIntegrals();
+    have_control_time_ = false;
+    return;
+  }
+
+  // dt for the position integrator, from the actual control invocation
+  // times. After a gap in the setpoint stream the integrals are reset and
+  // integration restarts cleanly (dt = 0 on the first cycle back).
+  float dt = 0.0f;
+  if(have_control_time_)
+  {
+    const double gap = (now - last_control_time_).seconds();
+    if(gap > setpoint_timeout_)
+    {
+      RCLCPP_WARN(this->get_logger(),
+                  "[publishSE3Command]: %.2f s gap in setpoint stream; resetting integrals.", gap);
+      controller_.resetIntegrals();
+    }
+    else
+    {
+      dt = static_cast<float>(gap);
+    }
+  }
+  last_control_time_ = now;
+  have_control_time_ = true;
 
   Eigen::Vector3f ki = Eigen::Vector3f::Zero();
-  Eigen::Vector3f kib = Eigen::Vector3f::Zero();
   if(enable_motors_)
-  {
-    ki = config_ki_; // @todo implement dynamic config
-    kib = config_kib_;
-  }
+    ki = config_ki_;
   else
-  {
-    ki = Eigen::Vector3f::Zero();
-    kib = Eigen::Vector3f::Zero();
-  }
+    controller_.resetIntegrals();  // never accumulate while disarmed
 
-  // std::cout << "kx_:" << std::endl << kx_;
-  // std::cout << "kv_: " << std::endl << kv_;
-  controller_.calculateControl(des_pos_, des_vel_, des_acc_, des_jrk_, des_yaw_, des_yaw_dot_, kx_, kv_, ki, kib, kd_, attctrl_tau_);
+  controller_.calculateControl(des_pos_, des_vel_, des_acc_, des_jrk_, des_yaw_, des_yaw_dot_, kx_, kv_, ki, kd_, attctrl_tau_, dt);
 
   const Eigen::Vector3f &force = controller_.getComputedForce();
   const Eigen::Quaternionf &orientation = controller_.getComputedOrientation();
@@ -471,6 +521,27 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
 {
   auto result = rcl_interfaces::msg::SetParametersResult();
   result.successful = true;
+  // Validate: all gain-like parameters must be non-negative finite numbers.
+  for (const auto & parameter : parameters)
+  {
+    const auto & name = parameter.get_name();
+    const bool gain_like = name.rfind("gains.", 0) == 0 || name.rfind("drag.", 0) == 0 ||
+                           name == "attctrl_tau" || name == "max_accel" ||
+                           name == "max_tilt_angle" || name == "mass" ||
+                           name == "max_pos_int" || name == "yaw_gain";
+    if(gain_like && parameter.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE)
+    {
+      const double v = parameter.as_double();
+      if(!std::isfinite(v) || v < 0.0 ||
+         ((name == "attctrl_tau" || name == "mass") && v <= 0.0))
+      {
+        result.successful = false;
+        result.reason = name + " must be a non-negative finite number";
+        RCLCPP_ERROR(this->get_logger(), "Rejected parameter %s = %f", name.c_str(), v);
+        return result;
+      }
+    }
+  }
   for (auto parameter : parameters)
   {
     if(parameter.get_name() == "gains.pos.x")
@@ -535,12 +606,51 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
     if(parameter.get_name() == "yaw_gain")
     {
       yaw_gain_ = static_cast<float>(parameter.as_double());
-      RCLCPP_INFO(this->get_logger(), "yaw_gain_  = %d", yaw_gain_);
+      RCLCPP_INFO(this->get_logger(), "yaw_gain_  = %0.2f", yaw_gain_);
       controller_.setYawGain(yaw_gain_);
     }
-    
-    
-    
+    if(parameter.get_name() == "gains.ki.x")
+    {
+      config_ki_[0] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.ki.x  = %0.3f", config_ki_[0]);
+    }
+    if(parameter.get_name() == "gains.ki.y")
+    {
+      config_ki_[1] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.ki.y  = %0.3f", config_ki_[1]);
+    }
+    if(parameter.get_name() == "gains.ki.z")
+    {
+      config_ki_[2] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got gains.ki.z  = %0.3f", config_ki_[2]);
+    }
+    if(parameter.get_name() == "drag.kd.x")
+    {
+      config_kd_[0] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got drag.kd.x  = %0.3f", config_kd_[0]);
+    }
+    if(parameter.get_name() == "drag.kd.y")
+    {
+      config_kd_[1] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got drag.kd.y  = %0.3f", config_kd_[1]);
+    }
+    if(parameter.get_name() == "drag.kd.z")
+    {
+      config_kd_[2] = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "Got drag.kd.z  = %0.3f", config_kd_[2]);
+    }
+    if(parameter.get_name() == "max_pos_int")
+    {
+      const float v = static_cast<float>(parameter.as_double());
+      RCLCPP_INFO(this->get_logger(), "max_pos_int  = %0.2f", v);
+      controller_.setMaxIntegral(v);
+    }
+    if(parameter.get_name() == "enable_rate_feedforward")
+    {
+      const bool en = parameter.as_bool();
+      RCLCPP_INFO(this->get_logger(), "enable_rate_feedforward = %d", en);
+      controller_.setRateFeedforward(en);
+    }
   }
 
   return result;

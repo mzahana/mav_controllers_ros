@@ -4,11 +4,16 @@ GeometricAttitudeControl::GeometricAttitudeControl()
     : mass_(0.5),
       g_(9.81),
       max_pos_int_(0.5),
-      max_pos_int_b_(0.5),
       current_orientation_q_(Eigen::Quaternionf::Identity()),
       cos_max_tilt_angle_(-1.0),
-      yaw_gain_(0.3)
+      max_accel_(10.0),
+      pos_int_(Eigen::Vector3f::Zero()),
+      velocity_yaw_(false),
+      yaw_gain_(0.3),
+      saturated_(false),
+      rate_ff_enabled_(false)
 {
+  gravity_vec_ = Eigen::Vector3f(0.0, 0.0, -g_);
 }
 
 GeometricAttitudeControl::~GeometricAttitudeControl()
@@ -18,7 +23,10 @@ GeometricAttitudeControl::~GeometricAttitudeControl()
 
 void GeometricAttitudeControl::setMass(const float mass)
 {
-  mass_ = mass;
+  if(mass > 0.0f)
+    mass_ = mass;
+  else
+    std::cerr << "[GeometricAttitudeControl] mass must be > 0; keeping " << mass_ << std::endl;
 }
 
 void GeometricAttitudeControl::setGravity(const float g)
@@ -42,11 +50,6 @@ void GeometricAttitudeControl::setMaxIntegral(const float max_integral)
   max_pos_int_ = max_integral;
 }
 
-void GeometricAttitudeControl::setMaxIntegralBody(const float max_integral_b)
-{
-  max_pos_int_b_ = max_integral_b;
-}
-
 void GeometricAttitudeControl::setCurrentOrientation(const Eigen::Quaternionf &current_orientation)
 {
   current_orientation_q_ = current_orientation;
@@ -65,9 +68,9 @@ void GeometricAttitudeControl::setMaxTiltAngle(const float max_tilt_angle)
 void GeometricAttitudeControl::setMaxAcceleration(const float max_acc)
 {
   max_accel_ = max_acc;
-  if(max_accel_ < 0)
+  if(max_accel_ <= 0)
   {
-    std::cout << "max_accel_ can not be negative. Using the default of 10 m/s/s" << std::endl;
+    std::cerr << "[GeometricAttitudeControl] max_accel must be > 0. Using the default of 10 m/s/s" << std::endl;
     max_accel_ = 10.0;
   }
 }
@@ -80,6 +83,11 @@ void GeometricAttitudeControl::setVelocityYaw(const bool vel_yaw)
 void GeometricAttitudeControl::setYawGain(const float yaw_gain)
 {
   yaw_gain_ = yaw_gain;
+}
+
+void GeometricAttitudeControl::setRateFeedforward(const bool enable)
+{
+  rate_ff_enabled_ = enable;
 }
 
 const Eigen::Vector3f &GeometricAttitudeControl::getComputedForce()
@@ -112,11 +120,20 @@ const Eigen::Vector3f &GeometricAttitudeControl::getAttitudeError()
   return att_err_;
 }
 
+const Eigen::Vector3f &GeometricAttitudeControl::getPosIntegral()
+{
+  return pos_int_;
+}
+
+bool GeometricAttitudeControl::isSaturated() const
+{
+  return saturated_;
+}
+
 void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, const Eigen::Vector3f &des_vel, const Eigen::Vector3f &des_acc,
                         const Eigen::Vector3f &des_jerk, const float des_yaw, const float des_yaw_dot,
                         const Eigen::Vector3f &kx, const Eigen::Vector3f &kv, const Eigen::Vector3f &ki,
-                        const Eigen::Vector3f &ki_b,
-                        const Eigen::Vector3f &kd, const float &attctrl_tau)
+                        const Eigen::Vector3f &kd, const float &attctrl_tau, const float dt)
 {
   float yaw_d;
   if (velocity_yaw_) {
@@ -125,47 +142,35 @@ void GeometricAttitudeControl::calculateControl(const Eigen::Vector3f &des_pos, 
   else
     yaw_d = des_yaw;
 
-  // In this implementation, the gains need to be negated, but the will be passed as +ve numbers
+  // In this implementation, the gains need to be negated, but they will be passed as +ve numbers
   auto Kx = -kx;
   auto Kv = -kv;
   auto Ki = -ki;
-  auto Kib = -ki_b;
 
-  // Not used ??!  des_yaw_dot, des_jerk !!
-  Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, Kx, Kv, Ki, Kib, kd);
-  // std::cout << "a_des=\n" << a_des << "\n";
+  Eigen::Vector3f a_des = controlPosition(des_pos, des_vel, des_acc, yaw_d, Kx, Kv, Ki, kd, dt);
   force_ = mass_ * a_des; // in inertial frame
 
   // This updates angular_velocity_ and orientation_ (desired angular vel, and desired orientation)
-  computeBodyRateCmd( a_des, yaw_d, attctrl_tau);
-  // attcontroller(a_des, yaw_d, attctrl_tau);
-  // reducedAttController(a_des, yaw_d, attctrl_tau);
-  // mixedAttController(a_des, yaw_d, attctrl_tau);
-
+  computeBodyRateCmd(a_des, des_jerk, yaw_d, des_yaw_dot, attctrl_tau);
 }
 
 Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f &target_pos, const Eigen::Vector3f &target_vel,
                                   const Eigen::Vector3f &target_acc, const float &des_yaw,
-                                  const Eigen::Vector3f &kx, const Eigen::Vector3f &kv, 
-                                  const Eigen::Vector3f &ki, const Eigen::Vector3f &kib,
-                                  const Eigen::Vector3f &kd)
+                                  const Eigen::Vector3f &kx, const Eigen::Vector3f &kv,
+                                  const Eigen::Vector3f &ki, const Eigen::Vector3f &kd, const float dt)
 {
   // Compute BodyRate commands using differential flatness
   /// Controller based on Faessler 2017
   const Eigen::Vector3f a_ref = target_acc;
-  // std::cout << "a_ref=\n" << a_ref << "\n";
 
   const Eigen::Vector4f q_ref = acc2quaternion(a_ref - gravity_vec_, des_yaw);
   const Eigen::Matrix3f R_ref = quat2RotMatrix(q_ref);
 
   pos_err_ = pos_ - target_pos;
   vel_err_ = vel_ - target_vel;
-  // std::cout << "pos_err_=\n" << pos_err_ << "\n";
-  // std::cout << "vel_err_=\n" << vel_err_ << "\n";
 
   // Position Controller
-  const Eigen::Vector3f a_fb = poscontroller(pos_err_, vel_err_, kx, kv, ki, kib);
-  // std::cout << "a_fb=\n" << a_fb << "\n";
+  const Eigen::Vector3f a_fb = poscontroller(pos_err_, vel_err_, kx, kv, ki, dt);
 
   // Rotor Drag compensation
   const Eigen::Vector3f a_rd = R_ref * kd.asDiagonal() * R_ref.transpose() * target_vel;  // Rotor drag
@@ -182,13 +187,17 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
     const float cot_max_tilt_angle = cos_max_tilt_angle_ / std::sqrt(1 - cos_max_tilt_angle_ * cos_max_tilt_angle_);
     lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
     if(lambda > 0 && lambda <= 1)
+    {
       a_des = lambda * acc_control + gravity_vec_;
+      saturated_ = true;  // tilt limit active -> hold the integrator
+    }
   }
 
   return a_des;
 }
 
-void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des, const float &des_yaw, const float &attctrl_tau)
+void GeometricAttitudeControl::computeBodyRateCmd(const Eigen::Vector3f &a_des, const Eigen::Vector3f &des_jerk,
+                                                  const float &des_yaw, const float des_yaw_dot, const float &attctrl_tau)
 {
   // Reference attitude
   Eigen::Vector4f q_des = acc2quaternion(a_des, des_yaw);
@@ -197,7 +206,6 @@ void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des,
   orientation_.y() = q_des(2);
   orientation_.z() = q_des(3);
 
-  Eigen::Vector4f ratecmd;
   Eigen::Matrix3f rotmat;    // Rotation matrix of current attitude
   Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
 
@@ -207,170 +215,50 @@ void GeometricAttitudeControl::computeBodyRateCmd( const Eigen::Vector3f &a_des,
   att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
   angular_velocity_ = (2.0 / attctrl_tau) * att_err_;
 
-  // const Eigen::Vector3d zb = rotmat.col(2);
-  // desired_thrust_(0) = 0.0;
-  // desired_thrust_(1) = 0.0;
-  // desired_thrust_(2) = a_des.dot(zb);
-
-  // bodyrate_cmd.head(3) = controller_->getDesiredRate();
-  // double thrust_command = controller_->getDesiredThrust().z();
-  // bodyrate_cmd(3) =
-  //     std::max(0.0, std::min(1.0, norm_thrust_const_ * thrust_command +
-  //                                     norm_thrust_offset_));  // Calculate thrustcontroller_->getDesiredThrust()(3);
+  // Body-rate feedforward from differential flatness (Mellinger/Faessler):
+  // for a trajectory with jerk j and total acceleration a (thrust axis
+  // z_B = a/|a|), the reference body rates are
+  //   w_x = -h_w . y_B,  w_y = h_w . x_B,  w_z = yaw_dot * (e3 . z_B)
+  // with h_w = (j - (z_B . j) z_B) / |a|.
+  if(rate_ff_enabled_)
+  {
+    const float a_norm = a_des.norm();
+    if(a_norm > 1.0f)  // no meaningful thrust axis near free-fall
+    {
+      const Eigen::Vector3f x_B = rotmat_d.col(0);
+      const Eigen::Vector3f y_B = rotmat_d.col(1);
+      const Eigen::Vector3f z_B = rotmat_d.col(2);
+      const Eigen::Vector3f h_w = (des_jerk - (z_B.dot(des_jerk)) * z_B) / a_norm;
+      Eigen::Vector3f w_ff;
+      w_ff(0) = -h_w.dot(y_B);
+      w_ff(1) = h_w.dot(x_B);
+      w_ff(2) = des_yaw_dot * z_B(2);
+      // The feedforward is expressed in the *desired* body frame; for the
+      // small attitude errors of normal tracking this matches the current
+      // body frame closely. Bound it defensively.
+      const float w_ff_max = 3.0f;  // rad/s
+      for(int i = 0; i < 3; i++)
+        w_ff(i) = std::max(-w_ff_max, std::min(w_ff_max, w_ff(i)));
+      angular_velocity_ += w_ff;
+    }
+  }
 }
 
-void GeometricAttitudeControl::attcontroller( Eigen::Vector3f& ref_acc, const float &des_yaw, const float &attctrl_tau)
-{
-  Eigen::Vector4f qe, q_inv, inverse;
-  inverse << 1.0, -1.0, -1.0, -1.0;
-  q_inv = inverse.asDiagonal() * current_orientation_vec_;
-  Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
-  Eigen::Matrix3f rotmat;    // Rotation matrix of current attitude
-  Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
-
-  rotmat = quat2RotMatrix(current_orientation_vec_);
-  rotmat_d = quat2RotMatrix(q_des);
-
-  att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
-
-  orientation_.w() = q_des(0);
-  orientation_.x() = q_des(1);
-  orientation_.y() = q_des(2);
-  orientation_.z() = q_des(3);
-  qe = quatMultiplication(q_inv, q_des);
-  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
-  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
-  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
-}
-
-void GeometricAttitudeControl::reducedAttController( Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau)
-{
-  Eigen::Vector4f ratecmd;
-  Eigen::Vector4f qe, q_inv, inverse, qe_red, qe_red_inv, q_mix;
-  Eigen::Matrix3f rotmat, ref_rotmat;
-  Eigen::Vector3f zb, ebz, ecmdz, k_vec;
-  double alpha, alpha_mix;
-
-  Eigen::Vector4f q_des = acc2quaternion(ref_acc, des_yaw);
-  Eigen::Matrix3f rotmat_d;  // Rotation matrix of desired attitude
-
-  rotmat = quat2RotMatrix(current_orientation_vec_);//Current Orientation Rotation Matrix
-  rotmat_d = quat2RotMatrix(q_des);
-
-  att_err_ = 0.5 * matrix_hat_inv(rotmat_d.transpose() * rotmat - rotmat.transpose() * rotmat_d);
-
-  orientation_.w() = q_des(0);
-  orientation_.x() = q_des(1);
-  orientation_.y() = q_des(2);
-  orientation_.z() = q_des(3);
-
-  ref_rotmat = quat2RotMatrix(q_des); //Command Orientation Rotation Matrix
-  // Full attitude controller  
-  inverse << 1.0, -1.0, -1.0, -1.0;
-  q_inv = inverse.asDiagonal() * current_orientation_vec_;
-  qe = quatMultiplication(q_inv, q_des);
-
-  // Reduced attitude controller
-  ebz = rotmat.col(2);
-  ecmdz = ref_rotmat.col(2);
-  alpha = std::acos(ebz.dot(ecmdz));
-  k_vec = ebz.cross(ecmdz);
-  k_vec = k_vec.normalized();
-
-  qe_red << cos(alpha), std::sin(alpha) * k_vec(0), std::sin(alpha) * k_vec(1), std::sin(alpha) * k_vec(2); // Reduced error quaternion
-  qe_red_inv = inverse.asDiagonal() * qe_red;
-
-  q_mix = quatMultiplication(qe_red_inv, qe);
-  alpha_mix = std::acos(2*q_mix(0));
-  q_mix << std::cos(.5 * alpha_mix * yaw_gain_), 0, 0, std::sin(.5 * alpha_mix * yaw_gain_);
-
-  qe = quatMultiplication(qe_red, q_mix); //Update error quaternion to mixed reduced quaternion
-
-  // Mixing reduced and full attitude controller
-
-  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
-  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
-  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
-
-}
-
-void GeometricAttitudeControl::mixedAttController( Eigen::Vector3f &ref_acc, const float &des_yaw, const float &attctrl_tau)
-{
-  // Using Ref: https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/154099/eth-7387-01.pdf?sequence=1&isAllowed=y
-  
-  // commanded z-zxis of body expressed in inertial frame Eq(43)
-  Eigen::Vector3f ez_cmd_IB = ref_acc/ref_acc.norm();
-  // Z-axis of the current attitude
-  Eigen::Vector3f ez_B = quat2RotMatrix(current_orientation_vec_).col(2);
-  // the unit vector of the error quaternion of the reduced attitude Eq(45)
-  Eigen::Vector3f qe_k = ez_B.cross(ez_cmd_IB);
-  qe_k = qe_k.normalized();
-  // Alpha angle Eq(46)
-  float alpha = std::acos(ez_B.dot(ez_cmd_IB));
-  // Reduced error quaternion, Eq(45)
-  Eigen::Vector4f qe_red;
-  qe_red << std::cos(alpha/2),
-            std::sin(alpha/2)*qe_k(0),
-            std::sin(alpha/2)*qe_k(1),
-            std::sin(alpha/2)*qe_k(2);
-
-  Eigen::Vector4f q_cmd_red = quatMultiplication(current_orientation_vec_, qe_red); // Eq(47)
-
-  Eigen::Matrix3f R_KI; R_KI.setZero();
-  R_KI(0,0) = std::cos(des_yaw); R_KI(0,1) = std::sin(des_yaw);
-  R_KI(1,0) = -std::sin(des_yaw); R_KI(1,1) = std::cos(des_yaw);
-  R_KI(2,2) = 1.0;
-  Eigen::Vector3f ez_cmd_KB = R_KI*ez_cmd_IB; // Eq(48)
-  float pitch_cmd;
-  if(ez_cmd_KB(2) != 0)
-    pitch_cmd = std::atan(ez_cmd_KB(0)/ez_cmd_KB(2)); // Eq(49)
-  else
-    pitch_cmd = 0.0;
-
-  Eigen::Matrix3f R_LK; R_LK.setZero();
-  R_LK(0,0) = std::cos(pitch_cmd); R_LK(0,2) = -std::sin(pitch_cmd);
-  R_LK(1,1) = 1.0;
-  R_LK(2,0) = std::sin(pitch_cmd); R_LK(2,2) = std::cos(pitch_cmd);
-
-  Eigen::Vector3f ez_cmd_LB = R_LK*ez_cmd_KB; // Eq(50)
-
-  float roll_cmd = std::atan2(-ez_cmd_LB(1), ez_cmd_LB(2)); // Eq(51)
-
-  Eigen::Vector4f q_cmd_full = quatFromEulerZYX(des_yaw, pitch_cmd, roll_cmd); // Eq(52)
- 
-  Eigen::Vector4f q_cmd_red_inv =  inverseQuaternion(q_cmd_red);
-  Eigen::Vector4f q_mix = quatMultiplication(q_cmd_red_inv, q_cmd_full);
-  float alpha_mix = 2*std::acos(q_mix(0));
-  Eigen::Vector4f q_mix_p; q_mix_p.setZero();
-  q_mix_p(0) = std::cos(yaw_gain_*alpha_mix/2);
-  q_mix_p(3) = std::sin(yaw_gain_*alpha_mix/2);
-
-  Eigen::Vector4f q_cmd = quatMultiplication(q_cmd_red, q_mix_p); // Eq(54)
-
-  orientation_.w() = q_cmd(0);
-  orientation_.x() = q_cmd(1);
-  orientation_.y() = q_cmd(2);
-  orientation_.z() = q_cmd(3);
-
-  // Mixing reduced and full attitude controller
-  Eigen::Vector4f q_inv = inverseQuaternion(current_orientation_vec_);
-  Eigen::Vector4f qe = quatMultiplication(q_inv, q_cmd);
-
-  // Desired angular velocity Eq(23)
-  angular_velocity_(0) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(1);
-  angular_velocity_(1) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(2);
-  angular_velocity_(2) = (2.0 / attctrl_tau) * std::copysign(1.0, qe(0)) * qe(3);
-}
-
-Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &pos_error, const Eigen::Vector3f &vel_error, 
+Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &pos_error, const Eigen::Vector3f &vel_error,
                                                         const Eigen::Vector3f &kx, const Eigen::Vector3f &kv,
-                                                        const Eigen::Vector3f &ki, 
-                                                        const Eigen::Vector3f &kib)
+                                                        const Eigen::Vector3f &ki, const float dt)
 {
+  // Conditional-integration anti-windup: only accumulate when the previous
+  // cycle was not saturated (accel clamp / tilt limit), and only with a
+  // valid dt. Note ki arrives negated (like kx/kv), and pos_error = pos -
+  // target, so the accumulated term already carries the correct sign.
+  const bool allow_integration = !saturated_ && dt > 0.0f && dt < 0.5f;
+  saturated_ = false;  // recomputed below and by the tilt limit
+
   for(int i = 0; i < 3; i++)
   {
-    if(ki(i) != 0)
-      pos_int_(i) += ki(i) * pos_error(i);
+    if(ki(i) != 0 && allow_integration)
+      pos_int_(i) += ki(i) * pos_error(i) * dt;
 
     // Limit integral term
     if(pos_int_(i) > max_pos_int_)
@@ -378,12 +266,28 @@ Eigen::Vector3f GeometricAttitudeControl::poscontroller(const Eigen::Vector3f &p
     else if(pos_int_(i) < -max_pos_int_)
       pos_int_(i) = -max_pos_int_;
   }
-  // std::cout << "pos_int_\n" << pos_int_ << "\n";
+
   Eigen::Vector3f a_fb =
       kx.asDiagonal() * pos_error + kv.asDiagonal() * vel_error + pos_int_;  // feedforward term for trajectory error
 
-  if (a_fb.norm() > max_accel_)
-    a_fb = (max_accel_ / a_fb.norm()) * a_fb;  // Clip acceleration if reference is too large
+  // Altitude-priority saturation: when the feedback acceleration exceeds
+  // the budget, keep the vertical component (altitude keeps the vehicle
+  // alive) and shed horizontal acceleration first.
+  const float a_norm = a_fb.norm();
+  if(a_norm > max_accel_)
+  {
+    saturated_ = true;
+    float az = std::max(-max_accel_, std::min(max_accel_, a_fb.z()));
+    const float xy_budget = std::sqrt(std::max(0.0f, max_accel_ * max_accel_ - az * az));
+    const float xy_norm = std::sqrt(a_fb.x() * a_fb.x() + a_fb.y() * a_fb.y());
+    if(xy_norm > xy_budget && xy_norm > 1e-6f)
+    {
+      const float s = xy_budget / xy_norm;
+      a_fb.x() *= s;
+      a_fb.y() *= s;
+    }
+    a_fb.z() = az;
+  }
 
   return a_fb;
 }
@@ -408,6 +312,5 @@ Eigen::Vector4f GeometricAttitudeControl::acc2quaternion(const Eigen::Vector3f &
 void GeometricAttitudeControl::resetIntegrals()
 {
   pos_int_ = Eigen::Vector3f::Zero();
-  pos_int_b_ = Eigen::Vector3f::Zero();
+  saturated_ = false;
 }
-

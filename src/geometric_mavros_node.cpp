@@ -17,6 +17,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include "mavros_msgs/msg/state.hpp"
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/float64.hpp>
 #include "message_filters/subscriber.h"
 #include "message_filters/synchronizer.h"
 #include "message_filters/sync_policies/approximate_time.h"
@@ -96,6 +97,33 @@ private:
   double se3_cmd_timeout_;
   rclcpp::Time last_se3_cmd_time_;
   mav_controllers_ros::msg::SE3Command last_se3_cmd_;
+
+  // --- Online thrust-scale estimation -------------------------------
+  // The accelerometer measures specific force; along body z it is T/m in
+  // flight. Comparing that against the commanded normalized thrust gives
+  // the true max-thrust scale (battery sag, prop wear, wrong max_thrust
+  // param). The estimate is slow (first-order, tau ~15 s), heavily gated
+  // (armed, mid-throttle, low body rates), and hard-clamped, so it can
+  // only trim the thrust map — never destabilize the loop.
+  double vehicle_mass_;           // kg; <= 0 disables the estimator
+  bool enable_thrust_estimator_;
+  double thrust_est_tau_;         // s
+  double thrust_est_min_, thrust_est_max_;
+  double thrust_scale_est_;       // multiplies max_thrust_
+  double imu_accel_z_;            // body-z specific force [m/s^2]
+  double imu_rate_norm_;          // |gyro| [rad/s]
+  rclcpp::Time last_cmd_cb_time_;
+  bool have_cmd_cb_time_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr thrust_scale_pub_;
+
+  // --- Command-timeout failsafe -------------------------------------
+  // Legacy behavior re-published the last (stale) command forever, which
+  // keeps feeding PX4 setpoints and PREVENTS its offboard-loss failsafe
+  // from engaging. New default: hold a level, zero-rate, hover-thrust
+  // setpoint briefly, then stop publishing so PX4's failsafe takes over.
+  double cmd_timeout_hold_duration_;  // s of level hold before going silent
+  rclcpp::Time cmd_timeout_start_;
+  bool in_cmd_timeout_;
 
   rclcpp::Clock::SharedPtr clock_ = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
   
@@ -196,6 +224,38 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
   this->declare_parameter("se3_cmd_timeout", 0.25);
   se3_cmd_timeout_ = this->get_parameter("se3_cmd_timeout").get_parameter_value().get<double>();
 
+  this->declare_parameter("cmd_timeout_hold_duration", 1.0);
+  cmd_timeout_hold_duration_ = this->get_parameter("cmd_timeout_hold_duration").get_parameter_value().get<double>();
+
+  // Thrust-scale estimator (needs vehicle mass to convert specific force
+  // to thrust). mass <= 0 disables it.
+  this->declare_parameter("mass", 0.0);
+  vehicle_mass_ = this->get_parameter("mass").get_parameter_value().get<double>();
+  this->declare_parameter("enable_thrust_estimator", true);
+  enable_thrust_estimator_ = this->get_parameter("enable_thrust_estimator").get_parameter_value().get<bool>();
+  this->declare_parameter("thrust_est_tau", 15.0);
+  thrust_est_tau_ = this->get_parameter("thrust_est_tau").get_parameter_value().get<double>();
+  this->declare_parameter("thrust_est_min", 0.8);
+  thrust_est_min_ = this->get_parameter("thrust_est_min").get_parameter_value().get<double>();
+  this->declare_parameter("thrust_est_max", 1.25);
+  thrust_est_max_ = this->get_parameter("thrust_est_max").get_parameter_value().get<double>();
+  thrust_scale_est_ = 1.0;
+  imu_accel_z_ = 0.0;
+  imu_rate_norm_ = 0.0;
+  have_cmd_cb_time_ = false;
+  in_cmd_timeout_ = false;
+  if(enable_thrust_estimator_ && vehicle_mass_ <= 0.0)
+  {
+    RCLCPP_WARN(this->get_logger(),
+                "enable_thrust_estimator is true but 'mass' param is not set (> 0); "
+                "disabling the thrust-scale estimator.");
+    enable_thrust_estimator_ = false;
+  }
+  if(enable_thrust_estimator_)
+    RCLCPP_INFO(this->get_logger(),
+                "Thrust-scale estimator ON: mass=%.3f kg, tau=%.1f s, clamp=[%.2f, %.2f]",
+                vehicle_mass_, thrust_est_tau_, thrust_est_min_, thrust_est_max_);
+
   odom_set_ = false;
   imu_set_ = false;
   so3_cmd_set_ = false;
@@ -205,6 +265,7 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
     
   attitude_raw_pub_ = this->create_publisher<mavros_msgs::msg::AttitudeTarget>("mavros/attitude_target", 10);
   motors_state_pub_ = this->create_publisher<std_msgs::msg::Bool>("geometric_controller/enable_motors", 10);
+  thrust_scale_pub_ = this->create_publisher<std_msgs::msg::Float64>("geometric_mavros/thrust_scale_estimate", 10);
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("geometric_mavros/combined_odometry", rclcpp::SensorDataQoS());
   
 
@@ -278,16 +339,57 @@ void
 SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
 {
   imu_q_ = Eigen::Quaterniond(msg.orientation.w, msg.orientation.x, msg.orientation.y, msg.orientation.z);
+  // Body-z specific force (~ thrust/mass in flight) and rate magnitude,
+  // consumed by the thrust-scale estimator with its own gating.
+  imu_accel_z_ = msg.linear_acceleration.z;
+  imu_rate_norm_ = std::sqrt(msg.angular_velocity.x * msg.angular_velocity.x +
+                             msg.angular_velocity.y * msg.angular_velocity.y +
+                             msg.angular_velocity.z * msg.angular_velocity.z);
   imu_set_ = true;
-  
-  double dt = this->now().seconds() - last_se3_cmd_time_.seconds();
-  if(so3_cmd_set_ && ( dt >= se3_cmd_timeout_))
-  {
-    RCLCPP_INFO(this->get_logger(), "so3_cmd timeout. %f seconds since last command", dt);
-    const auto last_se3_cmd_ptr = boost::make_shared<mav_controllers_ros::msg::SE3Command>(last_se3_cmd_);
 
-    // so3_cmd_callback(last_se3_cmd_ptr);
-    cmdCallback(last_se3_cmd_);
+  double dt = this->now().seconds() - last_se3_cmd_time_.seconds();
+  if(so3_cmd_set_ && (dt >= se3_cmd_timeout_))
+  {
+    // Command stream lost. Do NOT keep re-publishing the stale command —
+    // that feeds PX4 fresh setpoints and blocks its offboard-loss
+    // failsafe. Instead: hold a level, zero-rate, hover-thrust setpoint
+    // briefly (bridging short dropouts), then go silent so PX4's
+    // failsafe (COM_OBL_RC_ACT / mode switch) takes over.
+    if(!in_cmd_timeout_)
+    {
+      in_cmd_timeout_ = true;
+      cmd_timeout_start_ = this->now();
+      RCLCPP_ERROR(this->get_logger(),
+                   "SE3 command timeout (%.2f s since last command). Holding level "
+                   "hover setpoint for %.1f s, then stopping setpoints (PX4 failsafe).",
+                   dt, cmd_timeout_hold_duration_);
+    }
+    const double in_timeout_for = (this->now() - cmd_timeout_start_).seconds();
+    if(in_timeout_for <= cmd_timeout_hold_duration_)
+    {
+      mavros_msgs::msg::AttitudeTarget failsafe_msg;
+      failsafe_msg.header.stamp = this->now();
+      failsafe_msg.type_mask = mavros_msgs::msg::AttitudeTarget::IGNORE_ATTITUDE;
+      failsafe_msg.body_rate.x = 0.0;
+      failsafe_msg.body_rate.y = 0.0;
+      failsafe_msg.body_rate.z = 0.0;
+      double hover_throttle = 0.0;
+      if(vehicle_mass_ > 0.0)
+        hover_throttle = vehicle_mass_ * 9.81 / (max_thrust_ * thrust_scale_est_);
+      failsafe_msg.thrust = std::max(0.0, std::min(1.0, hover_throttle));
+      if(!motors_armed_)
+        failsafe_msg.thrust = 0.0;
+      attitude_raw_pub_->publish(failsafe_msg);
+    }
+    else
+    {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *(clock_.get()), 2000,
+                            "SE3 command stream still lost; setpoints stopped, PX4 failsafe active.");
+    }
+  }
+  else
+  {
+    in_cmd_timeout_ = false;
   }
 }
 
@@ -366,11 +468,49 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
   // Scaling from rotor velocity (rad/s) to att_throttle for pixhawk
   // throttle = lin_cof_a_ * throttle + lin_int_b_;
 
+  // ---- Online thrust-scale estimation ----
+  // throttle currently holds the commanded collective thrust in Newtons.
+  // In steady flight the accelerometer's body-z specific force a_z equals
+  // T_actual/m, so  scale_sample = m*a_z / T_commanded  measures how much
+  // the real thrust map deviates from max_thrust_. Gated hard: armed,
+  // mid-envelope thrust, low body rates, sane accel; slow first-order
+  // filter; clamped. Publishes the estimate for logging either way.
+  if(enable_thrust_estimator_)
+  {
+    const rclcpp::Time now_t = this->now();
+    if(have_cmd_cb_time_ && imu_set_)
+    {
+      const double dt_est = (now_t - last_cmd_cb_time_).seconds();
+      const double u_norm = throttle / max_thrust_;  // pre-correction normalized cmd
+      const bool gate = motors_armed_ &&
+                        dt_est > 0.0 && dt_est < 0.5 &&
+                        u_norm > 0.15 && u_norm < 0.9 &&
+                        imu_rate_norm_ < 1.0 &&
+                        imu_accel_z_ > 4.0 && imu_accel_z_ < 25.0 &&
+                        throttle > 1e-3;
+      if(gate)
+      {
+        const double scale_sample = (vehicle_mass_ * imu_accel_z_) / throttle;
+        const double a = std::min(1.0, dt_est / thrust_est_tau_);
+        thrust_scale_est_ += a * (scale_sample - thrust_scale_est_);
+        thrust_scale_est_ = std::max(thrust_est_min_, std::min(thrust_est_max_, thrust_scale_est_));
+      }
+    }
+    last_cmd_cb_time_ = now_t;
+    have_cmd_cb_time_ = true;
+    std_msgs::msg::Float64 est_msg;
+    est_msg.data = thrust_scale_est_;
+    thrust_scale_pub_->publish(est_msg);
+  }
+
   // normalize using the maximum thrust by all motors
   // There is also thrust scaling in mavros (px4_config.yaml), but we will do it here, and keep the the MAVROS scaling at its default=1
   // MAVROS scaling: thrust := thrust * thrust_scaling
   //  Ref: https://github.com/mavlink/mavros/blob/ros2/mavros/src/plugins/setpoint_raw.cpp#L305
-  throttle = throttle/max_thrust_;
+  // The estimated scale corrects the effective thrust map: if the vehicle
+  // produces more thrust than max_thrust_ implies (scale > 1), less
+  // normalized throttle is needed, and vice versa.
+  throttle = throttle / (max_thrust_ * thrust_scale_est_);
 
   // failsafe for the error in traj_gen that can lead to nan values
   //prevents throttle from being sent to 1 if it is nan.
