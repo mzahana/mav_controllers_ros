@@ -2,6 +2,9 @@
 
 Easy steps to test the geometric controller with the `trajectory_test_node`.
 
+For *how the node works internally* — the curve math, the speed derating,
+the smooth ramps — see [TRAJECTORY_MATH.md](TRAJECTORY_MATH.md).
+
 ## What this node does
 
 The node sends trajectory setpoints to the geometric controller. It can fly:
