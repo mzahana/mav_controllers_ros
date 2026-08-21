@@ -1,110 +1,114 @@
 # mav_controllers_ros
-The purpose of this repo is to provide a ROS2 implementation of multiple micro aerial vehicles (mav) controllers.
-Currently, it provides an implementation of SE3 and attitude geometric controllers.
-The implementation of the controllers is general in the sense it is not implemented for a particular interface such as MAVROS. 
-For particular interface, a separate ROS 2 node is used. A MAVROS insterface is currently supported to be used with a PX4 autopilot.
 
-# Compatability and dependencies
-This package is tested with ROS 2 `humbel`.
+ROS 2 implementations of micro aerial vehicle (MAV) controllers: a **geometric
+attitude controller** (recommended) and an **SE3 controller**.
 
-Depedencies can be found the in the [package.xml](package.xml) file.
+The controller libraries are interface-agnostic; a separate node adapts them to
+a specific autopilot interface. A MAVROS interface for PX4 is provided.
 
-# Testing the controller with trajectories
-See [docs/TRAJECTORY_TESTING.md](docs/TRAJECTORY_TESTING.md) for simple step-by-step instructions to fly safe setpoint, circle, and figure-8 (lemniscate) test trajectories in SITL and in the field using `trajectory_test_node`.
+Tested with ROS 2 **Humble**. Dependencies are listed in [package.xml](package.xml).
 
-# Main node
+> This branch contains production-hardening work (dt-correct integrator,
+> anti-windup, altitude-priority saturation, rate feedforward, watchdogs,
+> thrust-scale estimator). See [CHANGES.md](CHANGES.md) for the full list.
 
-## se3controller_node
-This node is the main ros 2 interface. The core SE3Controller library is implemented in [src/SE3Controller.cpp](src/SE3Controller.cpp). This node (se3controller_node) uses this library and interface the controller to ROS 2 system. This node is implemented in [src/se3_controller_node.cpp](src/se3_controller_node.cpp).
+## Which controller should I use?
 
-### Subscriptions
-* `se3controller/setpoint` This is the setpoint that that the controller needs. Should be published by another node. This topic uses a custom message of type `geometric_controller_ros::msg::TargetCommand` This custom message is defined in [msg/TargetCommand.msg](msg/TargetCommand.msg).
-* `se3controller/odom` Odometry topic. Uses message `nav_msgs::msg:Odometry`. This is used to get the position/velocity feedback.
+| | node | core library | status |
+|---|---|---|---|
+| **Geometric attitude** | `geometric_controller_node` | [GeometricAttitudeControl.cpp](src/GeometricAttitudeControl.cpp) | Recommended. Commands body rates + thrust. Flies well on PX4. |
+| SE3 | `se3controller_node` | [SE3Controller.cpp](src/SE3Controller.cpp) | Legacy. Works with attitude + thrust setpoints; rate setpoints are not stable. |
 
-* `se3controller/enable_motors`: This topic uses `std_msgs::msg::Bool` to get the state of motors (armed or not). This is used to engage the integrators coefiicients accordingly.
+Both follow the same structure, so the sections below describe the geometric
+controller; the SE3 equivalents use `se3controller` in place of
+`geometric_controller` in node, topic, launch and config names.
 
-**NOTE** All the above subscriptions can be remapped to the right topics in the launch file [launch/se3controller.launch.py](launch/se3controller.launch.py)
+## Quick start (PX4 + MAVROS)
 
-### Publishers
-* `se3controller/cmd`: This uses a custom message of type [SE3Command](msg/SE3Command.msg). It publishes the output of the SE3 controller to be consumed by a particular interface (e.g. MAVROS). Note that his cannot be remapped directly to a MAVROS topic. An interface node is needed, see the `se3controller_mavros_node` section below.
+1. Set your vehicle mass and gains in [config/geometric_controller.yaml](config/geometric_controller.yaml).
+2. Set `max_thrust` (total thrust of all motors, in Newtons) in
+   [config/geometric_mavros.yaml](config/geometric_mavros.yaml). **Note:** this
+   scales the effective gains — see [CHANGES.md](CHANGES.md).
+3. Build and run:
 
-* `se3controller/cmd_pose`: This uses `geometry_msgs::msg::PoseStamped`. It publishes the position part of the command for visualization in RViz2.
-
-### Launch and config files
-* [launch/se3controller.launch.py](launch/se3controller.launch.py)
-* [config/se3controller.yaml](config/se3controller.yaml)
-
-# Interface Nodes
-
-## se3controller_mavros_node
-This nodes is an interface between the main node `se3controller_node` and MAVROS.
-
-### Subscriptions
-* `se3controller_mavros/odom`: Uses message type `nav_msgs::msg::Odometry`. This is basically used to get the quaternion from the odmoetry system, which could be not the same as the odmoetry from the autopilot. Examples, are like, external VIO, or motion capture systems.
-
-* `se3controller_mavros/imu`: Uses message type `sensor_msgs::msg::Imu`. This is basically used to get the quaternion from the autopilot IMU (published by MAVROS), which could be not the same as the odmoetry system that is used. 
-
-The two above subscrioptions are used to handle the difference in orientation that is provided by the odometry and the autopilot system, which could be different.
-
-* `mavros/state`: Uses `mavros_msg::msg::State`. This is used to get the arming state (motors are started or not). This is passed to the main node (se3controller_node) using the `se3controller/enable_motors` topic of the main node.
-
-**NOTE** All the above subscriptions can be remapped to the right topics in the launch file [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py)
-
-### Publishers
-
-* `mavros/attitude_target`: This uses `mavros_msgs::msg::AttitudeTarget`. It publishes the SE3 control command `se3controller/cmd` from the main node (after doing the neccessarty scaling to thrust) to the appropriate MAVROS topic 
-(usually`/mavros/setpoint_raw/target_attitude`)
-
-* `se3controller/enable_motors`: Uses `std_msgs::msg:Bool`. It published the motors state (armed or not) which is consumed by the main node `se3controller_node` to engage the integrators coeeficients in the controller computations. 
-
-### Launch and config files
-* [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py). This launch file runs only the mavros interface node.
-
-* [config/se3controller_mavros.yaml](config/se3controller_mavros.yaml)
-
-* [launch/mavros_interface.launch.py](launch/mavros_interface.launch.py). This launch files runs both the main controller node and the mavros interface node.
-
-# How to use this controller?
-* Modify the main controller node config file [config/se3controller.yaml](config/se3controller.yaml) to set the correct mass and appropriate controller gains for your multi-rotor UAV.
-
-* Modify the [config/se3controller_mavros.yaml](config/se3controller_mavros.yaml) to set the `max_thrust` parameter. This is basically the maxmium total thrust in Newton that the all motors on your vehicle can give.
-
-* rebuild the package
 ```bash
-colcon build --packages-select geometric_controller_ros
+colcon build --packages-select mav_controllers_ros
 source install/setup.bash
+ros2 launch mav_controllers_ros geometric_mavros_interface.launch.py
 ```
 
-* If you are using the mavros interface, you can run the laucnh file
+That launch file starts both the controller node and the MAVROS interface node.
+To run them individually, use `geometric_controller.launch.py` and
+`geometric_to_mavros.launch.py`.
+
+## Nodes
+
+### `geometric_controller_node`
+The main controller. Consumes a reference trajectory and odometry, produces a
+control command for an interface node. Source:
+[src/geometric_attitude_control_node.cpp](src/geometric_attitude_control_node.cpp).
+
+**Subscribes**
+* `geometric_controller/setpoint` — [TargetCommand](msg/TargetCommand.msg):
+  position, velocity, acceleration, jerk, yaw, yaw_dot (+ optional per-message gains).
+* `geometric_controller/multi_dof_setpoint` — `trajectory_msgs/MultiDOFJointTrajectoryPoint`, alternative setpoint input.
+* `geometric_controller/odom` — `nav_msgs/Odometry`, position/velocity feedback.
+* `geometric_controller/enable_motors` — `std_msgs/Bool`, engages the integrators (published by the interface node).
+
+**Publishes**
+* `geometric_controller/cmd` — [SE3Command](msg/SE3Command.msg), consumed by an interface node.
+* `geometric_controller/cmd_pose`, `geometric_controller/odom_pose` — `geometry_msgs/PoseStamped` for RViz.
+* `geometric_controller/control_errors` — tracking errors for tuning/logging.
+
+Watchdogs revert to a safe hold if the setpoint or odometry stream stalls
+(`setpoint_timeout`, `odom_timeout`, `hold_on_setpoint_timeout`).
+
+### `geometric_mavros_node` (interface)
+Bridges the controller to MAVROS. Source:
+[src/geometric_mavros_node.cpp](src/geometric_mavros_node.cpp).
+
+**Subscribes**
+* `geometric_mavros/odom` and `geometric_mavros/imu` — the odometry and autopilot
+  orientations, which may differ (e.g. external VIO or motion capture); used to
+  reconcile the two frames. `geometric_mavros/pose` + `geometric_mavros/twist`
+  are an alternative input, republished as `geometric_mavros/combined_odometry`.
+* `geometric_controller/cmd` — the controller output.
+* `mavros/state` — arming state.
+
+**Publishes**
+* `mavros/attitude_target` — `mavros_msgs/AttitudeTarget` (remap to `/mavros/setpoint_raw/attitude`), after thrust scaling.
+* `geometric_controller/enable_motors` — arming state, back to the controller node.
+* `geometric_mavros/thrust_scale_estimate` — online hover-thrust estimate (`enable_thrust_estimator`).
+
+All subscriptions are remapped in the launch files.
+
+## Testing
+
+Flight-test the controller with `trajectory_test_node` (setpoint, circle and
+figure-8 trajectories, with feasibility limiting, geofence and safe abort):
+
 ```bash
-ros2 launch geometric_controller_ros mavros_interface.launch.py
+ros2 launch mav_controllers_ros trajectory_test.launch.py
 ```
 
-# Creating custom interface node
-If you have a different interface than mavros, you will need to create the  following 3 files.
-* create an interface node similar to [src/se3controller_mavros_node.cpp](src/se3controller_mavros_node.cpp). Then, add it to the CMakeLists.txt file
+* [docs/TRAJECTORY_TESTING.md](docs/TRAJECTORY_TESTING.md) — step-by-step guide for SITL and field tests.
+* [docs/TRAJECTORY_MATH.md](docs/TRAJECTORY_MATH.md) — the method and math behind the node.
 
-* Then, create the a config file, similar to [config/se3controller_mavros.yaml](config/se3controller_mavros.yaml). The parameters can be different than the mavros interface, depending on the interface requirements.
+Simpler test nodes: `static_setpoint_test_node` (hold one point) and
+`circular_trajectory_node`, with matching `static_setpoint.launch.py` and
+`circular_trajectory.launch.py`.
 
-* Create a launch file for your custom interface similar to [launch/se3controller_to_mavros.launch.py](launch/se3controller_to_mavros.launch.py) that runs your custom interface node and used your custom config file.
+## Creating a custom interface node
 
-* You will also need to remap the odometry topic in the main controller node to the topic that your vehicle publish. Also remap the odom and IMU topic in your custom interface node.
+To support an autopilot interface other than MAVROS:
 
-# Test nodes
+1. Add a node modelled on [src/geometric_mavros_node.cpp](src/geometric_mavros_node.cpp) and register it in [CMakeLists.txt](CMakeLists.txt).
+2. Add a config file modelled on [config/geometric_mavros.yaml](config/geometric_mavros.yaml).
+3. Add a launch file modelled on [launch/geometric_to_mavros.launch.py](launch/geometric_to_mavros.launch.py), remapping the odometry and IMU topics of your interface node and the odometry topic of the controller node.
 
-## se3_setpoint_test_node
-To test the main controller node you can use the test node in [test/se3_setpoint_test.cpp](test/se3_setpoint_test.cpp) to send some position setpoints.
-```bash
-ros2 run geometric_controller_ros se3_setpoint_test_node --ros-args -p x:=-1.0 -p y:=-1.0 -p z:=2.0
-```
-`x,y,z` are target positions.
+## History
 
-
-# Updates
-* Sept, 2023: Added nodes to publish some commands, static setpoint, and circular trajectory.
-* Sept, 2023: Adding `GeometricAttitdeControl` class and corresponiding mavros interface nodes/config/launch files. This is based on `mavros_controllers` implementation with some modifications. This is tested with PX4 SITL with the `x500` model, and it works better thatn `SE3Controller`. The setpoints are attitude rates and thrust.
-* Sept, 2023: `SE3Controller` Initial test with PX4 SITL using the `x500` quadopter model is working OK, but with attitude and thrust setpoints. Attitude rate and thrust setpoints is not stable.
-
-# TODO
-* implement a node for trajectory generation ( infinity shape)
-* Test with actual drone.
+* 2025: Production hardening of the geometric controller — see [CHANGES.md](CHANGES.md). Added `trajectory_test_node` (setpoint / circle / lemniscate).
+* Sept 2023: Added `GeometricAttitudeControl` and its MAVROS interface, based on `mavros_controllers` with modifications. Tested in PX4 SITL with the `x500` model; works better than `SE3Controller`.
+* Sept 2023: Added static setpoint and circular trajectory test nodes.
+* Sept 2023: `SE3Controller` tested in PX4 SITL with `x500` using attitude + thrust setpoints.
