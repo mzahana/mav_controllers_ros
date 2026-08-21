@@ -9,6 +9,9 @@ This package is tested with ROS 2 `humbel`.
 
 Depedencies can be found the in the [package.xml](package.xml) file.
 
+# Testing the controller with trajectories
+See [docs/TRAJECTORY_TESTING.md](docs/TRAJECTORY_TESTING.md) for simple step-by-step instructions to fly safe setpoint, circle, and figure-8 (lemniscate) test trajectories in SITL and in the field using `trajectory_test_node`.
+
 # Main node
 
 ## se3controller_node

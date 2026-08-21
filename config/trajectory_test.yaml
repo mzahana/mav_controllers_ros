@@ -1,0 +1,72 @@
+# Trajectory test node — safe, feasibility-checked references for the
+# geometric controller (setpoint / circle / lemniscate).
+#
+# Workflow (field or SITL):
+#   1. Launch controller + this node. It streams a hold setpoint at the
+#      current pose, so engaging OFFBOARD is safe at any time.
+#   2. Take off / hover (e.g. engage OFFBOARD while hovering).
+#   3. ros2 service call <ns>/trajectory_test/start std_srvs/srv/Trigger
+#      The node plans from the current pose, checks feasibility + geofence,
+#      flies a min-jerk transition to the trajectory, ramps up speed.
+#   4. ros2 service call <ns>/trajectory_test/stop std_srvs/srv/Trigger
+#      Smooth ramp-down, then position hold.
+#   Any exit from OFFBOARD / disarm / stale odometry aborts to HOLD.
+#
+# For SITL, auto_start: true starts the trajectory as soon as the vehicle is
+# armed + OFFBOARD + motors enabled. Keep it false in the field.
+
+# /** matches the node under any namespace (e.g. /interceptor).
+/**/trajectory_test_node:
+  ros__parameters:
+    trajectory_type: "circle"      # setpoint | circle | lemniscate
+    publish_rate: 100.0            # [Hz] setpoint stream rate
+
+    # Interpret setpoint/center below as offsets from the pose at the start
+    # trigger (true, recommended in the field) or absolute local coordinates.
+    relative_to_start: true
+
+    setpoint:                      # trajectory_type: setpoint
+      x: 0.0                       # [m]
+      y: 0.0
+      z: 0.0                       # relative_to_start: 0.0 keeps current altitude
+      yaw: 0.0                     # [rad] used when yaw_mode: fixed
+
+    circle:                        # trajectory_type: circle
+      center_x: 0.0                # [m] circle passes r meters around this
+      center_y: 0.0
+      z: 0.0                       # 0.0 with relative_to_start keeps altitude
+      radius: 3.0                  # [m]
+      clockwise: false
+
+    lemniscate:                    # trajectory_type: lemniscate (Gerono figure-8)
+      center_x: 0.0
+      center_y: 0.0
+      z: 0.0
+      width: 4.0                   # [m] half-length A; x spans [-A, +A]
+
+    speed: 2.0                     # [m/s] desired path speed (auto-derated to
+                                   # respect accel/jerk limits; check the log)
+    ramp_time: 4.0                 # [s] smoothstep speed ramp in/out
+
+    goto_speed: 1.0                # [m/s] peak speed of min-jerk transitions
+    goto_accel: 1.0                # [m/s^2] peak accel of min-jerk transitions
+
+    limits:
+      max_speed: 8.0               # [m/s]
+      max_accel: 5.0               # [m/s^2] keep below controller max_accel (10)
+      max_jerk: 40.0               # [m/s^3]
+      max_yaw_rate: 1.0            # [rad/s]
+
+    yaw_mode: "tangent"            # hold   : keep yaw at start trigger
+                                   # fixed  : setpoint.yaw
+                                   # tangent: face direction of travel
+                                   # center : face trajectory center
+
+    geofence:
+      enable: true
+      max_radius_xy: 20.0          # [m] from the pose at start trigger
+      min_z: 0.5                   # [m] local frame
+      max_z: 30.0                  # [m] local frame
+
+    auto_start: false              # true only for SITL
+    odom_timeout: 0.5              # [s]

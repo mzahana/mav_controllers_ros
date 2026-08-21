@@ -84,3 +84,47 @@ convergence to upstream, plus the new behaviors below.
   flights after gain tuning if you want the exact tuned plant.
 - `ki` is now safe to use: start with `ki: 0.3–1.5` on z after PD tuning,
   `max_pos_int` sized so `max_pos_int` [m/s²] covers expected disturbance.
+
+## Trajectory test node (2026-08-21)
+
+New `trajectory_test_node` (`test/trajectory_test_node.cpp`) replaces the
+old step-jump test publishers with a safety-gated, feasibility-checked
+reference generator for SITL and field testing:
+
+- Types: `setpoint` (min-jerk move + hold), `circle`, `lemniscate`
+  (Gerono figure-8), selected by the `trajectory_type` parameter.
+- Full flat-output references: position, velocity, acceleration **and
+  jerk** plus yaw/yaw_dot, so the controller's differential-flatness rate
+  feedforward gets consistent inputs.
+- Feasibility: scans the curve's max |p'|, |p''|, |p'''| and derates the
+  angular rate in closed form so speed/accel/jerk limits
+  (`limits.max_*`) are never exceeded; logs the achieved peak speed.
+- Sequencing: streams a hold setpoint at the current pose (safe OFFBOARD
+  engage) → min-jerk transition to the nearest point on the curve → C2
+  smoothstep speed ramp → track → smooth ramp-down on stop.
+- Safety: gated on OFFBOARD + armed + motors enabled + fresh odom (any
+  loss aborts to HOLD); geofence pre-check of the whole planned path and
+  runtime breach abort; yaw-rate limiter with consistent yaw_dot.
+- Interface: `trajectory_test/start` and `trajectory_test/stop`
+  (std_srvs/Trigger), `trajectory_test/status` (phase), RViz path on
+  `trajectory_test/planned_path`; `auto_start: true` for SITL only.
+- Files: `config/trajectory_test.yaml`, `launch/trajectory_test.launch.py`;
+  functional test harnesses in `test/scripts/` (fake vehicle state; verify
+  limit compliance, continuity, and dropout abort).
+
+### RViz tracking visualization + shutdown-safety (2026-08-21)
+
+- `trajectory_test_node` publishes `trajectory_test/reference_path`
+  (commanded trace), `trajectory_test/actual_path` (flown trace) and
+  `trajectory_test/setpoint_pose` for tracking-quality assessment; traces
+  clear on each start. `rviz/trajectory_test.rviz` layout ships with the
+  package; `trajectory_test.launch.py rviz:=true` opens it with topics
+  namespaced automatically.
+- **Hold-on-setpoint-loss failsafe** in `geometric_controller_node`
+  (`hold_on_setpoint_timeout`, default true): if the setpoint stream dies
+  mid-flight (planner shutdown/crash) while odometry is fresh and motors
+  are enabled, the controller latches a closed-loop position hold at the
+  current pose and keeps commanding at 50 Hz. New setpoints release the
+  hold; disarm or odometry loss clears it (odom loss falls back to the
+  silent/PX4-failsafe path, and a later re-latch uses the new position).
+  Verified with `test/scripts/traj_test_hold_failsafe.py`.

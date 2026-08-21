@@ -38,3 +38,10 @@ geometric_controller_node:
     max_tilt_angle: 0.7853  # rad
     max_accel: 10.0
     yaw_gain: 0.4 # For the reduced attitude controller
+    # Watchdogs / failsafes
+    odom_timeout: 0.3      # [s] stop commanding on stale odometry
+    setpoint_timeout: 1.0  # [s] setpoint stream considered lost after this
+    # If the setpoint stream is lost mid-flight (trajectory/planner node
+    # shut down or crashed), hold position at the current pose (closed loop)
+    # instead of going silent. New setpoints release the hold.
+    hold_on_setpoint_timeout: true

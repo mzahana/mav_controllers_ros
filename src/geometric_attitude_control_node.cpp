@@ -50,6 +50,7 @@ private:
   @brief Publish SE3 command to the flight controller
   */
   void publishSE3Command();
+  void holdWatchdog();
   /*
   @brief ROS callback to motor state
   @param msg mav_controllers_ros::msg::TargetCommand
@@ -102,6 +103,14 @@ private:
   rclcpp::Time last_odom_time_;
   rclcpp::Time last_control_time_;
   bool have_control_time_{false};
+  // Setpoint-loss hold failsafe: if the setpoint stream dies mid-flight
+  // (planner node shut down or crashed), latch a closed-loop position hold
+  // at the current pose and keep commanding, instead of going silent and
+  // depending on the PX4 offboard-loss failsafe configuration.
+  bool hold_on_setpoint_timeout_{true};
+  bool in_hold_failsafe_{false};
+  Eigen::Vector3f current_position_{Eigen::Vector3f::Zero()};
+  rclcpp::TimerBase::SharedPtr hold_watchdog_timer_;
   float des_yaw_, des_yaw_dot_;
   float current_yaw_;
   Eigen::Quaternionf current_orientation_;
@@ -236,6 +245,13 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   this->declare_parameter("setpoint_timeout", 1.0);
   setpoint_timeout_ = this->get_parameter("setpoint_timeout").get_parameter_value().get<double>();
 
+  this->declare_parameter("hold_on_setpoint_timeout", true);
+  hold_on_setpoint_timeout_ =
+      this->get_parameter("hold_on_setpoint_timeout").get_parameter_value().get<bool>();
+  if(hold_on_setpoint_timeout_)
+    hold_watchdog_timer_ =
+        this->create_wall_timer(20ms, std::bind(&GeometricControlNode::holdWatchdog, this));
+
   this->declare_parameter("enable_rate_feedforward", true);
   controller_.setRateFeedforward(
       this->get_parameter("enable_rate_feedforward").get_parameter_value().get<bool>());
@@ -293,7 +309,52 @@ void GeometricControlNode::motorStateCallback(const std_msgs::msg::Bool & msg)
   if (msg.data)
     enable_motors_ = true;
   else
+  {
     enable_motors_ = false;
+    in_hold_failsafe_ = false;  // a stale hold pose must not survive re-engage
+  }
+}
+
+// Runs at 50 Hz when hold_on_setpoint_timeout is enabled. If we were flying
+// setpoints and the stream stops while odometry is healthy and motors are
+// enabled, latch a position hold at the current pose and keep commanding.
+// A new setpoint releases the hold (see targetCmdCallback).
+void GeometricControlNode::holdWatchdog()
+{
+  if(!have_control_time_ || !have_odom_ || !enable_motors_)
+    return;
+
+  const rclcpp::Time now = this->now();
+  if((now - last_odom_time_).seconds() > odom_timeout_)
+  {
+    // Can't hold without state; publishSE3Command's odom watchdog goes
+    // silent and PX4's failsafe takes over. Drop the hold so that if odom
+    // returns we re-latch at the vehicle's NEW position, not a stale one.
+    in_hold_failsafe_ = false;
+    return;
+  }
+
+  if(!in_hold_failsafe_)
+  {
+    if((now - last_control_time_).seconds() <= setpoint_timeout_)
+      return;
+    in_hold_failsafe_ = true;
+    des_pos_ = current_position_;
+    des_vel_.setZero();
+    des_acc_.setZero();
+    des_jrk_.setZero();
+    des_yaw_ = current_yaw_;
+    des_yaw_dot_ = 0.0f;
+    kx_ = config_kx_;
+    kv_ = config_kv_;
+    kd_ = config_kd_;
+    attctrl_tau_ = config_attctrl_tau_;
+    RCLCPP_ERROR(this->get_logger(),
+                 "[holdWatchdog]: setpoint stream lost. HOLDING position at "
+                 "(%.2f, %.2f, %.2f), yaw %.2f. New setpoints release the hold.",
+                 des_pos_(0), des_pos_(1), des_pos_(2), des_yaw_);
+  }
+  publishSE3Command();
 }
 
 
@@ -319,6 +380,7 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
   current_orientation_ = Eigen::Quaternionf(msg.pose.pose.orientation.w, msg.pose.pose.orientation.x,
                                             msg.pose.pose.orientation.y, msg.pose.pose.orientation.z);
 
+  current_position_ = position;
   controller_.setPosition(position);
   controller_.setVelocity(velocity);
   controller_.setCurrentOrientation(current_orientation_);
@@ -343,6 +405,12 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
 void
 GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCommand & msg)
 {
+  if(in_hold_failsafe_)
+  {
+    in_hold_failsafe_ = false;
+    RCLCPP_WARN(this->get_logger(),
+                "[targetCmdCallback]: setpoint stream resumed; releasing hold.");
+  }
   des_pos_ = Eigen::Vector3f(msg.position.x, msg.position.y, msg.position.z);
   des_vel_ = Eigen::Vector3f(msg.velocity.x, msg.velocity.y, msg.velocity.z);
   des_acc_ = Eigen::Vector3f(msg.acceleration.x, msg.acceleration.y, msg.acceleration.z);
@@ -373,6 +441,12 @@ GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCo
 void
 GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJointTrajectory& msg)
 {
+  if(in_hold_failsafe_)
+  {
+    in_hold_failsafe_ = false;
+    RCLCPP_WARN(this->get_logger(),
+                "[multiDofTrajCallback]: setpoint stream resumed; releasing hold.");
+  }
   des_pos_ = Eigen::Vector3f(msg.points[0].transforms[0].translation.x,
                               msg.points[0].transforms[0].translation.y,
                               msg.points[0].transforms[0].translation.z);

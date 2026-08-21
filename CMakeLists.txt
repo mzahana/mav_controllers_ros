@@ -13,6 +13,7 @@ find_package(nav_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -224,6 +225,23 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+#
+# trajectory test node (setpoint / circle / lemniscate, safety-gated)
+#
+add_executable(trajectory_test_node test/trajectory_test_node.cpp)
+ament_target_dependencies(trajectory_test_node
+  rclcpp nav_msgs geometry_msgs std_msgs std_srvs mavros_msgs tf2 tf2_ros)
+target_include_directories(trajectory_test_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+rosidl_get_typesupport_target(cpp_typesupport_target_traj_test ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(trajectory_test_node ${cpp_typesupport_target_traj_test})
+install(TARGETS
+  trajectory_test_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ###########################
 # Install launch files
 install(DIRECTORY launch
@@ -232,6 +250,11 @@ install(DIRECTORY launch
 
 # Install config files
 install(DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install rviz configs
+install(DIRECTORY rviz
   DESTINATION share/${PROJECT_NAME}/
 )
 
