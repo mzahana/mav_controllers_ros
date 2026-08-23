@@ -1,4 +1,4 @@
-# Geometric attitude controller — default gains.
+# Geometric attitude controller — parameters for geometric_controller_node.
 #
 # NOTE: The gains and limits below are TUNED FOR THE PX4 SITL x500-v2 MODEL
 # (2.0 kg quadrotor), identified with geo_tuner. They are the values flown in
@@ -9,53 +9,137 @@
 # parameter scales the effective gains, so the two files must be changed
 # together.
 #
-# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — what every parameter means,
-# how to measure it, and the order to tune in.
+# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — measurement procedure, tuning
+# order, and a symptom -> parameter table. geo_tuner computes the numbers.
+#
+# All gain-like parameters are settable at runtime with `ros2 param set`.
+# Values must be non-negative and finite; attctrl_tau and mass must be > 0.
 geometric_controller_node:
   ros__parameters:
+
+    # Vehicle mass including battery [kg]. Converts the commanded
+    # acceleration into a force. Must match `mass` in geometric_mavros.yaml.
     mass: 2.0
+
+    # true  : yaw follows the yaw field of the incoming setpoint message.
+    # false : yaw tracks the direction of travel (velocity heading).
     use_external_yaw: true
+
     gains:
+      # Position stiffness kx [1/s^2]. Acts on position error.
+      # Physically kx = wn^2, where wn is the closed-loop natural frequency
+      # of that axis. Current values => wn = 1.06 / 1.33 / 1.66 rad/s.
+      # Bounded by wn <= (2/attctrl_tau)/4 and wn <= 0.35/latency; see
+      # docs/PARAMETER_GUIDE.md section 4. z is normally stiffer than x/y
+      # because thrust acts directly on the vertical axis.
       pos:
         x: 1.125
         y: 1.764
         z: 2.757
+
+      # Velocity damping kv [1/s]. Acts on velocity error.
+      # Physically kv = 2*zeta*wn. Aim for zeta = 0.9-1.0 (near-critical,
+      # no overshoot). Current values => zeta = 0.84 / 0.73 / 0.79.
+      # Too low relative to gains.pos gives overshoot and ~1 Hz oscillation.
       vel:
         x: 1.781
         y: 1.95
         z: 2.619
+
+      # Integral gain ki [1/s^3]: integral += ki * pos_error * dt.
+      # Trims steady-state offset from mass / thrust-map error and wind.
+      # Time-correct, so behaviour is independent of loop rate.
+      # Start at zero and tune the PD loop first. z usually needs it because
+      # residual max_thrust error shows up as a constant altitude offset --
+      # but if you need a large ki.z, fix max_thrust instead.
+      # Anti-windup is automatic: integration pauses while saturated, and
+      # the term is clamped to max_pos_int.
       ki:
         x: 0.0
         y: 0.0
         z: 1.0
+
+      # DEPRECATED — NO EFFECT in this controller. The body-frame integral
+      # was never implemented here; kept only so older configs still load.
+      # The node logs a warning if any of these is nonzero.
+      # (These ARE functional in the separate SE3 controller.)
       kib:
         x: 0.0
         y: 0.0
         z: 0.0
+
     drag:
+      # Rotor-drag compensation coefficients [1/s], per body axis.
+      # Subtracts R*diag(kd)*R^T * v_ref from the commanded acceleration to
+      # cancel the velocity-proportional drag of spinning rotors.
+      # 0.0 disables it. Only worth identifying for fast forward flight;
+      # leave at zero unless you have measured values.
       kd:
         x: 0.0
         y: 0.0
         z: 0.0
+
+    # Attitude time constant [s]: body_rate = (2/attctrl_tau) * att_error,
+    # so attitude bandwidth is 2/tau rad/s. Smaller = snappier and noisier.
+    # Useful range 0.2-0.4. Must be > 0.
+    # This caps how fast the position loop may be, so lowering it is how you
+    # earn the right to raise gains.pos -- but only if the PX4 rate loop can
+    # deliver it. Run PX4 autotune first.
     attctrl_tau: 0.3
-    # Yaw attitude bandwidth, decoupled from roll/pitch. <= 0 makes yaw
-    # follow attctrl_tau. Yaw authority is usually much weaker than
-    # roll/pitch, so a larger (slower) tau here avoids saturating the
-    # yaw rate command.
+
+    # Yaw attitude time constant [s], decoupled from roll/pitch.
+    # 0.0 means "use attctrl_tau for yaw too" (original coupled behaviour).
+    # Yaw authority comes from motor drag torque, not thrust differential,
+    # so it is much weaker -- set this LARGER (slower) than attctrl_tau.
+    # Current value is ~3.7x slower. Symptom that you need it: yaw rate
+    # command pegged or yaw oscillating while roll/pitch track cleanly.
     yawctrl_tau: 1.103  # from geo_tuner report (yaw T_target 0.35 s)
+
+    # Clamp on the integral term's contribution [m/s^2] of acceleration.
+    # 1.0 is ~10% of a 1 g budget. Above ~2.0 a stuck integrator can command
+    # significant tilt on its own.
     max_pos_int: 1.0
+
+    # DEPRECATED — NO EFFECT (note the typo in the name; it is the declared
+    # spelling). Paired with the dead gains.kib above. Kept so old configs
+    # still load.
     mas_pos_int_b: 1.0
+
+    # Maximum commanded tilt from vertical [rad]. 0.6853 rad = 39.3 deg.
+    # Bounds horizontal acceleration to g*tan(tilt). Hitting this limit
+    # holds the integrator. Lower it (0.3-0.5) for early flight tests.
     max_tilt_angle: 0.6853  # rad
+
+    # Cap on the FEEDBACK acceleration magnitude [m/s^2].
+    # Saturation is altitude-priority: the vertical component is preserved
+    # and horizontal acceleration is shed first, so a saturated vehicle
+    # keeps its height instead of dropping. Raise only if you have the
+    # thrust headroom for it.
     max_accel: 10.0
-    yaw_gain: 0.4 # For the reduced attitude controller
-    # Feed the reference angular velocity through to the rate command in
-    # addition to the attitude-error term. Improves tracking on aggressive
-    # trajectories; disable if the reference rates are noisy.
+
+    # DEPRECATED — NO EFFECT. Stored by the node but never read by the
+    # control law. Yaw bandwidth is set by yawctrl_tau above, not here.
+    yaw_gain: 0.4
+
+    # Feed the reference angular velocity (derived from setpoint jerk via
+    # differential flatness) into the rate command alongside the
+    # attitude-error term. Materially improves tracking on aggressive
+    # trajectories. Set false if your setpoint source publishes noisy or
+    # absent jerk -- feedforward amplifies noise. Internally bounded to
+    # +/-3 rad/s.
     enable_rate_feedforward: true
-    # Watchdogs / failsafes
-    odom_timeout: 0.3      # [s] stop commanding on stale odometry
-    setpoint_timeout: 1.0  # [s] setpoint stream considered lost after this
-    # If the setpoint stream is lost mid-flight (trajectory/planner node
-    # shut down or crashed), hold position at the current pose (closed loop)
-    # instead of going silent. New setpoints release the hold.
+
+    # --- Watchdogs / failsafes ---
+
+    # Odometry older than this [s] -> stop commanding. Set above your
+    # worst-case odometry gap or you will get spurious dropouts.
+    odom_timeout: 0.3
+
+    # Setpoint stream considered lost after this long [s] with no setpoint.
+    setpoint_timeout: 1.0
+
+    # On setpoint loss, hold position at the current pose (closed loop)
+    # instead of going silent. This is what saves the vehicle when a
+    # trajectory/planner node crashes mid-flight. A new setpoint releases
+    # the hold.
     hold_on_setpoint_timeout: true

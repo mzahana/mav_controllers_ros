@@ -1,33 +1,87 @@
+# SE3 controller — parameters for se3controller_node.
+#
+# LEGACY. The geometric attitude controller (geometric_controller_node,
+# config/geometric_controller.yaml) is the recommended one and is what the
+# production-hardening work targeted. This node commands attitude + thrust;
+# its body-rate path is not stable. Use it only if you specifically need the
+# SE3 formulation.
+#
+# Unlike the geometric controller, this node does NOT have the dt-correct
+# integrator, anti-windup, altitude-priority saturation, watchdogs or
+# failsafes -- see CHANGES.md.
+#
+# The gains here are scaled by `max_thrust` in se3controller_mavros.yaml
+# exactly as in the geometric path: the two files are a matched pair.
 se3controller_node:
   ros__parameters:
+
+    # Vehicle mass including battery [kg].
     mass: 2.0
+
+    # true  : yaw follows the yaw field of the incoming setpoint message.
+    # false : yaw tracks the direction of travel (velocity heading).
     use_external_yaw: true
+
     gains:
+      # Position stiffness kx [1/s^2], acting on position error.
+      # kx = wn^2 for the closed-loop natural frequency of that axis.
       pos:
         x: 7.4
         y: 7.4
         z: 10.0
+
+      # Velocity damping kv [1/s], acting on velocity error.
+      # kv = 2*zeta*wn; aim for zeta near 1.0.
       vel:
         x: 4.8
         y: 4.8
         z: 5.0
+
+      # World-frame integral gain, acting on position error.
+      # Trims steady-state offset (mass / thrust-map error, wind).
+      # NOTE: unlike the geometric controller, this integrator is NOT
+      # multiplied by dt, so its effective strength depends on loop rate.
+      # It also only accumulates on axes where gains.pos is nonzero.
       ki:
         x: 0.1
         y: 0.1
         z: 0.2
+
+      # Body-frame integral gain. Functional in THIS controller (it is
+      # deprecated and inert in the geometric one). Clamped by
+      # mas_pos_int_b below.
       kib:
         x: 0.1
         y: 0.1
         z: 0.2
+
+      # Attitude proportional gain kR, per body axis. Passed through in the
+      # SE3Command message and applied by the interface node.
+      # z is normally lower than x/y: yaw authority is much weaker.
       rot:
         x: 1.0
         y: 1.0
         z: 0.5
+
+      # Angular-rate gain kOm, per body axis. Damping for the attitude
+      # loop; also passed through in the SE3Command message.
       ang:
         x: 0.13
         y: 0.13
         z: 0.1
+
+    # Clamp on the world-frame integral term (gains.ki).
     max_pos_int: 1.0
+
+    # Clamp on the body-frame integral term (gains.kib).
+    # Note the typo in the name; it is the declared spelling.
     mas_pos_int_b: 1.0
+
+    # Maximum commanded tilt from vertical [rad]. 0.7853 = 45 deg.
+    # Bounds horizontal acceleration to g*tan(tilt).
     max_tilt_angle: 0.7853  # rad
+
+    # Cap on the commanded acceleration magnitude [m/s^2].
+    # NOTE: this controller clamps uniformly; it does NOT have the
+    # altitude-priority saturation of the geometric controller.
     max_accel: 20.0

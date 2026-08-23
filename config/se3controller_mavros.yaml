@@ -1,8 +1,29 @@
+# MAVROS interface for the SE3 controller — parameters for
+# se3controller_mavros_node. Converts the SE3Command (force in Newtons)
+# into a mavros setpoint with normalized [0..1] thrust for PX4.
+#
+# LEGACY, paired with config/se3controller.yaml. The geometric path
+# (geometric_mavros.yaml) is the recommended one and is the only one with
+# the command-timeout failsafe and the online thrust-scale estimator.
 se3controller_mavros_node:
   ros__parameters:
-    num_props: 4
-    kf: 1.0
+
+    # --- Unused: remnants of an older per-rotor thrust model. ---
+    # max_thrust below is the only thrust parameter that has any effect.
+    num_props: 4    # not used
+    kf: 1.0         # not used
+    lin_cof_a: 1.0  # not used
+    lin_int_b: 0.0  # not used
+
+    # Total collective thrust of ALL motors at flight voltage [N].
+    # Throttle sent to PX4 is force_N / max_thrust, so this scales every
+    # gain in se3controller.yaml -- the two files are a matched pair.
+    # Measure it:  max_thrust = mass * 9.81 / hover_throttle,  with
+    # hover_throttle from a steady Position-mode hover log on a full
+    # battery. See docs/PARAMETER_GUIDE.md section 3.
     max_thrust: 34.0
-    lin_cof_a: 1.0
-    lin_int_b: 0.0
+
+    # No SE3 command received for this long [s] -> command timed out.
+    # NOTE: unlike the geometric interface node, this one has no
+    # level-attitude hold; it simply stops publishing.
     se3_cmd_timeout: 0.25

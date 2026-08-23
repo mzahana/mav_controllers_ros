@@ -1,35 +1,71 @@
-# MAVROS interface for the geometric controller — defaults.
+# MAVROS interface for the geometric controller — parameters for
+# geometric_mavros_node. This node converts the controller's SE3Command
+# (force in Newtons + body rates) into a mavros AttitudeTarget with
+# normalized [0..1] thrust for PX4.
 #
 # NOTE: max_thrust below is TUNED FOR THE PX4 SITL x500-v2 MODEL (2.0 kg
 # quadrotor), identified with geo_tuner. It scales the effective controller
 # gains, so it is matched to the gains in geometric_controller.yaml -- change
 # the two together, and re-tune both for any other airframe.
 #
-# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — what every parameter means,
-# how to measure it, and the order to tune in.
+# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — measurement procedure, tuning
+# order, and a symptom -> parameter table.
 geometric_mavros_node:
   ros__parameters:
-    num_props: 4 # not used
-    kf: 1.0 # not used
-    # Total maximum thrust of all props [N]. This scales the normalized
-    # throttle sent to the FCU, so ALL controller gains scale with it --
-    # re-tune (or rescale) the gains in geometric_controller.yaml if you
-    # change this.
+
+    # --- Unused: remnants of an older per-rotor thrust model. ---
+    # max_thrust below is the only thrust parameter that has any effect.
+    num_props: 4    # not used
+    kf: 1.0         # not used
+    lin_cof_a: 1.0  # not used
+    lin_int_b: 0.0  # not used
+
+    # Total collective thrust of ALL motors at flight voltage [N].
+    # The throttle sent to PX4 is  force_N / max_thrust,  so this scales
+    # every controller gain -- halve it and every commanded acceleration
+    # doubles. A gain set is only valid together with the max_thrust it was
+    # tuned at.
+    #
+    # Measure it, do not guess:  max_thrust = mass * 9.81 / hover_throttle
+    # with hover_throttle taken from a steady Position-mode hover log on a
+    # full battery. A bench thrust-stand figure ignores voltage sag and
+    # installation losses.
+    #   python -m geo_tuner.cli.analyze_hover flight.ulg --mass 2.0 --design
+    # Hover throttle > 0.6 means little headroom; < 0.3, check the mass.
     max_thrust: 27.5  # 34.0 * 0.81 per geo_tuner thrust-map identification
-    lin_cof_a: 1.0 # not used
-    lin_int_b: 0.0 # not used
-    # Vehicle mass [kg]. Required by the thrust-scale estimator below;
-    # must match 'mass' in geometric_controller.yaml.
+
+    # Vehicle mass including battery [kg]. Required by the thrust-scale
+    # estimator below, and used to compute hover throttle for the failsafe
+    # hold. Must match `mass` in geometric_controller.yaml.
+    # With mass <= 0 the estimator disables itself and logs a warning.
     mass: 2.0
-    # [s] no SE3 command for this long -> command timed out
+
+    # No SE3 command received for this long [s] -> command timed out.
     se3_cmd_timeout: 0.25
-    # [s] after the timeout, hold a level attitude at hover throttle for
-    # this long before going silent and letting the FCU failsafe take over.
+
+    # After that timeout, publish a LEVEL attitude at hover throttle for
+    # this long [s], then stop publishing entirely and let the PX4 failsafe
+    # take over. Bridges brief controller hiccups without fighting PX4 over
+    # a real failure. Hover throttle here comes from mass and max_thrust.
     cmd_timeout_hold_duration: 1.0
-    # Online thrust-scale estimator: uses the IMU body-z specific force to
-    # correct the thrust map in flight (battery sag, residual max_thrust
-    # error). Requires mass > 0 -- it is disabled with a warning otherwise.
+
+    # --- Online thrust-scale estimator ---
+    # Corrects the thrust map in flight: battery sag over a pack, plus
+    # whatever max_thrust error survived the hover-log identification. It
+    # compares commanded throttle against IMU body-z specific force and
+    # low-pass filters the ratio, then divides it into max_thrust.
+
+    # Master switch. Requires mass > 0 (see above).
     enable_thrust_estimator: true
-    thrust_est_tau: 15.0   # [s] estimator time constant
-    thrust_est_min: 0.8    # lower clamp on the estimated scale
-    thrust_est_max: 1.25   # upper clamp on the estimated scale
+
+    # Filter time constant [s]. Deliberately long -- this tracks battery
+    # sag, not maneuvers. Below ~5 s it starts fighting the controller.
+    thrust_est_tau: 15.0
+
+    # Clamps on the estimated scale factor. These bound how much authority
+    # the estimator has: widening them lets a bad IMU or a wrong mass do
+    # real damage. If the published estimate sits pinned at a clamp, your
+    # max_thrust is wrong by more than the estimator may correct -- fix
+    # max_thrust rather than widening these.
+    thrust_est_min: 0.8
+    thrust_est_max: 1.25
