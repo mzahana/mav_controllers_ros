@@ -1,38 +1,48 @@
+# Geometric attitude controller — default gains.
+#
+# NOTE: The gains and limits below are TUNED FOR THE PX4 SITL x500-v2 MODEL
+# (2.0 kg quadrotor), identified with geo_tuner. They are the values flown in
+# the d2dtracker SITL environment, not generic defaults. Re-tune for any other
+# airframe.
+#
+# The gains are matched to `max_thrust: 27.5` in geometric_mavros.yaml -- that
+# parameter scales the effective gains, so the two files must be changed
+# together.
 geometric_controller_node:
   ros__parameters:
     mass: 2.0
     use_external_yaw: true
     gains:
       pos:
-        x: 10.0
-        y: 10.0
-        z: 20.0
+        x: 1.125
+        y: 1.764
+        z: 2.757
       vel:
-        x: 5.0
-        y: 5.0
-        z: 10.0
+        x: 1.781
+        y: 1.95
+        z: 2.619
       ki:
-        x: 0.1
-        y: 0.1
-        z: 0.1
+        x: 0.0
+        y: 0.0
+        z: 1.0
       kib:
-        x: 0.1
-        y: 0.1
-        z: 0.2
+        x: 0.0
+        y: 0.0
+        z: 0.0
     drag:
       kd:
         x: 0.0
         y: 0.0
         z: 0.0
-    attctrl_tau: 0.2
+    attctrl_tau: 0.3
     # Yaw attitude bandwidth, decoupled from roll/pitch. <= 0 makes yaw
     # follow attctrl_tau. Yaw authority is usually much weaker than
     # roll/pitch, so a larger (slower) tau here avoids saturating the
     # yaw rate command.
-    yawctrl_tau: 0.0
+    yawctrl_tau: 1.103  # from geo_tuner report (yaw T_target 0.35 s)
     max_pos_int: 1.0
     mas_pos_int_b: 1.0
-    max_tilt_angle: 0.7853  # rad
+    max_tilt_angle: 0.6853  # rad
     max_accel: 10.0
     yaw_gain: 0.4 # For the reduced attitude controller
     # Feed the reference angular velocity through to the rate command in

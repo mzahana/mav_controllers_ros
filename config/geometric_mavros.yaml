@@ -1,3 +1,9 @@
+# MAVROS interface for the geometric controller — defaults.
+#
+# NOTE: max_thrust below is TUNED FOR THE PX4 SITL x500-v2 MODEL (2.0 kg
+# quadrotor), identified with geo_tuner. It scales the effective controller
+# gains, so it is matched to the gains in geometric_controller.yaml -- change
+# the two together, and re-tune both for any other airframe.
 geometric_mavros_node:
   ros__parameters:
     num_props: 4 # not used
@@ -6,7 +12,7 @@ geometric_mavros_node:
     # throttle sent to the FCU, so ALL controller gains scale with it --
     # re-tune (or rescale) the gains in geometric_controller.yaml if you
     # change this.
-    max_thrust: 34.0
+    max_thrust: 27.5  # 34.0 * 0.81 per geo_tuner thrust-map identification
     lin_cof_a: 1.0 # not used
     lin_int_b: 0.0 # not used
     # Vehicle mass [kg]. Required by the thrust-scale estimator below;
