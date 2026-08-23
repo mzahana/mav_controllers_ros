@@ -25,10 +25,16 @@ controller; the SE3 equivalents use `se3controller` in place of
 
 ## Quick start (PX4 + MAVROS)
 
+> **The shipped gains are tuned for the PX4 SITL x500-v2 model (2.0 kg).**
+> They are a starting point, not a universal default. Before flying anything
+> else, read **[docs/PARAMETER_GUIDE.md](docs/PARAMETER_GUIDE.md)** — it covers
+> every parameter, how to measure it, and the order to tune in.
+
 1. Set your vehicle mass and gains in [config/geometric_controller.yaml](config/geometric_controller.yaml).
 2. Set `max_thrust` (total thrust of all motors, in Newtons) in
    [config/geometric_mavros.yaml](config/geometric_mavros.yaml). **Note:** this
-   scales the effective gains — see [CHANGES.md](CHANGES.md).
+   scales the effective gains, so it and the gains are a matched pair — see
+   [docs/PARAMETER_GUIDE.md](docs/PARAMETER_GUIDE.md) and [CHANGES.md](CHANGES.md).
 3. Build and run:
 
 ```bash
@@ -91,6 +97,7 @@ figure-8 trajectories, with feasibility limiting, geofence and safe abort):
 ros2 launch mav_controllers_ros trajectory_test.launch.py
 ```
 
+* [docs/PARAMETER_GUIDE.md](docs/PARAMETER_GUIDE.md) — how to set every controller parameter, with a symptom → parameter table.
 * [docs/TRAJECTORY_TESTING.md](docs/TRAJECTORY_TESTING.md) — step-by-step guide for SITL and field tests.
 * [docs/TRAJECTORY_MATH.md](docs/TRAJECTORY_MATH.md) — the method and math behind the node.
 

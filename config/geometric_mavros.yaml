@@ -4,6 +4,9 @@
 # quadrotor), identified with geo_tuner. It scales the effective controller
 # gains, so it is matched to the gains in geometric_controller.yaml -- change
 # the two together, and re-tune both for any other airframe.
+#
+# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — what every parameter means,
+# how to measure it, and the order to tune in.
 geometric_mavros_node:
   ros__parameters:
     num_props: 4 # not used

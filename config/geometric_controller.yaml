@@ -8,6 +8,9 @@
 # The gains are matched to `max_thrust: 27.5` in geometric_mavros.yaml -- that
 # parameter scales the effective gains, so the two files must be changed
 # together.
+#
+# HOW TO SET THESE: docs/PARAMETER_GUIDE.md — what every parameter means,
+# how to measure it, and the order to tune in.
 geometric_controller_node:
   ros__parameters:
     mass: 2.0
