@@ -70,3 +70,8 @@
 
     auto_start: false              # true only for SITL
     odom_timeout: 0.5              # [s]
+
+    # RViz visualization of the reference vs. actual path.
+    viz:
+      path_max_points: 4000        # rolling window of points kept per path
+      min_point_dist: 0.05         # [m] decimation between appended points

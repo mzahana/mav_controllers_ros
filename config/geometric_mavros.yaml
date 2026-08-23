@@ -2,7 +2,25 @@ geometric_mavros_node:
   ros__parameters:
     num_props: 4 # not used
     kf: 1.0 # not used
+    # Total maximum thrust of all props [N]. This scales the normalized
+    # throttle sent to the FCU, so ALL controller gains scale with it --
+    # re-tune (or rescale) the gains in geometric_controller.yaml if you
+    # change this.
     max_thrust: 34.0
     lin_cof_a: 1.0 # not used
     lin_int_b: 0.0 # not used
+    # Vehicle mass [kg]. Required by the thrust-scale estimator below;
+    # must match 'mass' in geometric_controller.yaml.
+    mass: 2.0
+    # [s] no SE3 command for this long -> command timed out
     se3_cmd_timeout: 0.25
+    # [s] after the timeout, hold a level attitude at hover throttle for
+    # this long before going silent and letting the FCU failsafe take over.
+    cmd_timeout_hold_duration: 1.0
+    # Online thrust-scale estimator: uses the IMU body-z specific force to
+    # correct the thrust map in flight (battery sag, residual max_thrust
+    # error). Requires mass > 0 -- it is disabled with a warning otherwise.
+    enable_thrust_estimator: true
+    thrust_est_tau: 15.0   # [s] estimator time constant
+    thrust_est_min: 0.8    # lower clamp on the estimated scale
+    thrust_est_max: 1.25   # upper clamp on the estimated scale
