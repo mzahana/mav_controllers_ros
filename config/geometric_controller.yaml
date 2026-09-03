@@ -143,3 +143,12 @@ geometric_controller_node:
     # trajectory/planner node crashes mid-flight. A new setpoint releases
     # the hold.
     hold_on_setpoint_timeout: true
+
+    # --- Ground monitoring ---
+
+    # Rate [Hz] of the DiagnosticStatus published on geometric_controller/status. It
+    # carries stream ages/rates, failsafe state, saturation, tracking
+    # errors and the active gains, so a ground station never has to
+    # subscribe to the 50-100 Hz command streams over a field datalink.
+    # Observation only -- it cannot affect the control path. 0 disables.
+    status_rate: 5.0

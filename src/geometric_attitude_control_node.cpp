@@ -1,5 +1,7 @@
 #include <mav_controllers_ros/GeometricAttitudeControl.h>
 #include <cmath>
+#include <limits>
+#include <cstdio>
 #include "mav_controllers_ros/msg/se3_command.hpp"
 #include "mav_controllers_ros/msg/target_command.hpp"
 #include <chrono>
@@ -17,6 +19,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include "mav_controllers_ros/msg/control_errors.hpp"
+#include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
 #include <trajectory_msgs/msg/multi_dof_joint_trajectory.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 
@@ -52,6 +56,17 @@ private:
   void publishSE3Command();
   void holdWatchdog();
   /*
+  @brief Publish a DiagnosticStatus summarising controller health for ground
+  monitoring (stream ages/rates, hold failsafe, saturation, errors, gains).
+  Observation only: nothing here feeds back into the control path.
+  */
+  void publishStatus();
+  /*
+  @brief Update an EWMA rate estimate [Hz] from successive event times.
+  */
+  static void noteRate(double & rate_hz, rclcpp::Time & prev, bool & have_prev,
+                       const rclcpp::Time & now);
+  /*
   @brief ROS callback to motor state
   @param msg mav_controllers_ros::msg::TargetCommand
   */
@@ -82,6 +97,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  odom_pose_pub_;  // For sending PoseStamped to firmware ??
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  command_viz_pub_; // cmd visulaization in RViz2
   rclcpp::Publisher<mav_controllers_ros::msg::ControlErrors>::SharedPtr  cont_err_pub_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr  status_pub_;
 
   /* Subscribers */
   rclcpp::Subscription<mav_controllers_ros::msg::TargetCommand>::SharedPtr target_cmd_sub_;
@@ -111,6 +127,17 @@ private:
   bool in_hold_failsafe_{false};
   Eigen::Vector3f current_position_{Eigen::Vector3f::Zero()};
   rclcpp::TimerBase::SharedPtr hold_watchdog_timer_;
+  // Ground-monitoring telemetry (observation only). Stream health is
+  // otherwise invisible from outside the node, which makes a silent
+  // degradation (stale odom, dead planner, saturated controller) look
+  // identical to normal flight on the ground station.
+  rclcpp::TimerBase::SharedPtr status_timer_;
+  rclcpp::Time last_setpoint_time_;
+  bool have_setpoint_time_{false};
+  rclcpp::Time prev_odom_time_, prev_setpoint_time_, prev_control_time_;
+  bool have_prev_odom_{false}, have_prev_setpoint_{false}, have_prev_control_{false};
+  double odom_rate_hz_{0.0}, setpoint_rate_hz_{0.0}, control_rate_hz_{0.0};
+  float control_dt_{0.0f};
   float des_yaw_, des_yaw_dot_;
   float current_yaw_;
   Eigen::Quaternionf current_orientation_;
@@ -282,6 +309,20 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
   command_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("geometric_controller/cmd_pose", 10);
   cont_err_pub_ = this->create_publisher<mav_controllers_ros::msg::ControlErrors>("geometric_controller/control_errors", 10);
 
+  // Health status for ground monitoring. Deliberately low rate: it is meant
+  // to survive a field datalink, so panels never have to subscribe to the
+  // 50-100 Hz command streams. status_rate <= 0 disables it entirely.
+  this->declare_parameter("status_rate", 5.0);
+  const double status_rate = this->get_parameter("status_rate").get_parameter_value().get<double>();
+  if(status_rate > 0.0)
+  {
+    status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(
+        "geometric_controller/status", 10);
+    status_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / status_rate),
+        std::bind(&GeometricControlNode::publishStatus, this));
+  }
+
   target_cmd_sub_ = this->create_subscription<mav_controllers_ros::msg::TargetCommand>(
       "geometric_controller/setpoint", 10, std::bind(&GeometricControlNode::targetCmdCallback, this, _1));
 
@@ -385,7 +426,9 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
   controller_.setVelocity(velocity);
   controller_.setCurrentOrientation(current_orientation_);
 
-  last_odom_time_ = this->now();
+  const rclcpp::Time odom_now = this->now();
+  noteRate(odom_rate_hz_, prev_odom_time_, have_prev_odom_, odom_now);
+  last_odom_time_ = odom_now;
   have_odom_ = true;
 
   // if(position_cmd_init_)
@@ -405,6 +448,12 @@ GeometricControlNode::odomCallback(const nav_msgs::msg::Odometry & msg)
 void
 GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCommand & msg)
 {
+  {
+    const rclcpp::Time sp_now = this->now();
+    noteRate(setpoint_rate_hz_, prev_setpoint_time_, have_prev_setpoint_, sp_now);
+    last_setpoint_time_ = sp_now;
+    have_setpoint_time_ = true;
+  }
   if(in_hold_failsafe_)
   {
     in_hold_failsafe_ = false;
@@ -441,6 +490,12 @@ GeometricControlNode::targetCmdCallback(const mav_controllers_ros::msg::TargetCo
 void
 GeometricControlNode::multiDofTrajCallback(const trajectory_msgs::msg::MultiDOFJointTrajectory& msg)
 {
+  {
+    const rclcpp::Time sp_now = this->now();
+    noteRate(setpoint_rate_hz_, prev_setpoint_time_, have_prev_setpoint_, sp_now);
+    last_setpoint_time_ = sp_now;
+    have_setpoint_time_ = true;
+  }
   if(in_hold_failsafe_)
   {
     in_hold_failsafe_ = false;
@@ -531,6 +586,8 @@ GeometricControlNode::publishSE3Command()
       dt = static_cast<float>(gap);
     }
   }
+  noteRate(control_rate_hz_, prev_control_time_, have_prev_control_, now);
+  control_dt_ = dt;
   last_control_time_ = now;
   have_control_time_ = true;
 
@@ -595,6 +652,170 @@ GeometricControlNode::publishSE3Command()
   cmd_viz_msg.pose.orientation.z = orientation.z();
   cmd_viz_msg.pose.orientation.w = orientation.w();
   command_viz_pub_->publish(cmd_viz_msg);
+}
+
+// EWMA of the instantaneous rate between successive events. A gap longer
+// than 2 s restarts the estimate rather than averaging across the outage,
+// so a stream that stops and resumes reports its true rate immediately.
+void
+GeometricControlNode::noteRate(double & rate_hz, rclcpp::Time & prev, bool & have_prev,
+                               const rclcpp::Time & now)
+{
+  if(have_prev)
+  {
+    const double gap = (now - prev).seconds();
+    if(gap > 2.0 || gap <= 0.0)
+    {
+      rate_hz = 0.0;
+    }
+    else
+    {
+      const double inst = 1.0 / gap;
+      rate_hz = (rate_hz > 0.0) ? (0.8 * rate_hz + 0.2 * inst) : inst;
+    }
+  }
+  prev = now;
+  have_prev = true;
+}
+
+// Health snapshot for the ground station. Everything reported here is state
+// the node already maintains; nothing is computed for the control path and
+// nothing here can influence it.
+void
+GeometricControlNode::publishStatus()
+{
+  if(!status_pub_)
+    return;
+
+  const rclcpp::Time now = this->now();
+  const double odom_age = have_odom_ ? (now - last_odom_time_).seconds()
+                                     : std::numeric_limits<double>::infinity();
+  const double setpoint_age = have_setpoint_time_ ? (now - last_setpoint_time_).seconds()
+                                                  : std::numeric_limits<double>::infinity();
+  const bool odom_stale = !have_odom_ || odom_age > odom_timeout_;
+  const bool setpoint_stale = !have_setpoint_time_ || setpoint_age > setpoint_timeout_;
+  const bool saturated = controller_.isSaturated();
+
+  diagnostic_msgs::msg::DiagnosticStatus st;
+  st.name = "geometric_controller";
+  st.hardware_id = this->get_name();
+
+  if(odom_stale)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    st.message = have_odom_ ? "odometry stale - not commanding" : "no odometry";
+  }
+  else if(in_hold_failsafe_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    st.message = "HOLD failsafe: setpoint stream lost";
+  }
+  else if(enable_motors_ && setpoint_stale)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    st.message = "no setpoints";
+  }
+  else if(saturated)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    st.message = "command saturated (accel/tilt limit)";
+  }
+  else if(!enable_motors_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    st.message = "idle (motors disabled)";
+  }
+  else
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    st.message = "tracking";
+  }
+
+  auto add = [&st](const char * key, const std::string & value) {
+    diagnostic_msgs::msg::KeyValue kv;
+    kv.key = key;
+    kv.value = value;
+    st.values.push_back(kv);
+  };
+  auto num = [](double v, int prec = 3) {
+    if(!std::isfinite(v))
+      return std::string("inf");
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.*f", prec, v);
+    return std::string(buf);
+  };
+  auto bl = [](bool v) { return std::string(v ? "true" : "false"); };
+
+  // A rate estimate only updates when an event arrives, so a stream that
+  // has died keeps reporting its last healthy rate. Report zero once the
+  // stream is stale, so a panel cannot show "50 Hz" for a dead publisher.
+  const double control_age = have_control_time_ ? (now - last_control_time_).seconds()
+                                                : std::numeric_limits<double>::infinity();
+  auto live = [](double rate, double age) { return (age > 2.0) ? 0.0 : rate; };
+
+  // Stream health
+  add("have_odom", bl(have_odom_));
+  add("odom_age_s", num(odom_age));
+  add("odom_rate_hz", num(live(odom_rate_hz_, odom_age), 1));
+  add("odom_timeout_s", num(odom_timeout_));
+  add("setpoint_age_s", num(setpoint_age));
+  add("setpoint_rate_hz", num(live(setpoint_rate_hz_, setpoint_age), 1));
+  add("setpoint_timeout_s", num(setpoint_timeout_));
+  add("control_rate_hz", num(live(control_rate_hz_, control_age), 1));
+  add("control_dt_s", num(control_dt_, 4));
+
+  // Mode / failsafe
+  add("motors_enabled", bl(enable_motors_));
+  add("hold_active", bl(in_hold_failsafe_));
+  add("hold_enabled", bl(hold_on_setpoint_timeout_));
+  add("saturated", bl(saturated));
+
+  // Tracking errors (norms plus per-axis position error, which is what a
+  // pilot reads to judge a gain change)
+  const Eigen::Vector3f pos_err = controller_.getPosError();
+  const Eigen::Vector3f vel_err = controller_.getVelError();
+  const Eigen::Vector3f att_err = controller_.getAttitudeError();
+  add("pos_err_norm_m", num(pos_err.norm()));
+  add("pos_err_x_m", num(pos_err(0)));
+  add("pos_err_y_m", num(pos_err(1)));
+  add("pos_err_z_m", num(pos_err(2)));
+  add("vel_err_norm_mps", num(vel_err.norm()));
+  add("att_err_norm", num(att_err.norm()));
+
+  // Attitude: actual tilt from odometry, commanded tilt from the last solve
+  const Eigen::Matrix3f R = current_orientation_.toRotationMatrix();
+  const float tilt = std::acos(std::max(-1.0f, std::min(1.0f, R(2, 2))));
+  const Eigen::Matrix3f Rc = controller_.getComputedOrientation().toRotationMatrix();
+  const float tilt_cmd = std::acos(std::max(-1.0f, std::min(1.0f, Rc(2, 2))));
+  add("tilt_deg", num(tilt * 180.0 / M_PI, 2));
+  add("tilt_cmd_deg", num(tilt_cmd * 180.0 / M_PI, 2));
+  add("yaw_deg", num(current_yaw_ * 180.0 / M_PI, 2));
+  add("yaw_err_deg", num(att_err(2) * 180.0 / M_PI, 2));
+
+  // Integrator state (windup is invisible otherwise)
+  const Eigen::Vector3f pos_int = controller_.getPosIntegral();
+  add("pos_int_x", num(pos_int(0)));
+  add("pos_int_y", num(pos_int(1)));
+  add("pos_int_z", num(pos_int(2)));
+
+  // Commanded force -> what the mavros node will turn into throttle
+  const Eigen::Vector3f force = controller_.getComputedForce();
+  add("cmd_force_norm_n", num(force.norm(), 2));
+  add("mass_kg", num(mass_, 3));
+
+  // ACTIVE gains: these can differ from the node parameters when a
+  // TargetCommand carries per-message gains, so a gain panel that only
+  // reads parameters would show the wrong numbers.
+  add("kx", num(kx_(0), 2) + "," + num(kx_(1), 2) + "," + num(kx_(2), 2));
+  add("kv", num(kv_(0), 2) + "," + num(kv_(1), 2) + "," + num(kv_(2), 2));
+  add("ki", num(config_ki_(0), 3) + "," + num(config_ki_(1), 3) + "," + num(config_ki_(2), 3));
+  add("attctrl_tau", num(attctrl_tau_, 3));
+
+  // Setpoint being tracked
+  add("des_pos", num(des_pos_(0), 2) + "," + num(des_pos_(1), 2) + "," + num(des_pos_(2), 2));
+  add("des_yaw_deg", num(des_yaw_ * 180.0 / M_PI, 1));
+
+  status_pub_->publish(st);
 }
 
 rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(const std::vector<rclcpp::Parameter> & parameters)

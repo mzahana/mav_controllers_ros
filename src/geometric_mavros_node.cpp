@@ -18,6 +18,10 @@
 #include "mavros_msgs/msg/state.hpp"
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
+#include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
+#include <cstdio>
+#include <limits>
 #include "message_filters/subscriber.h"
 #include "message_filters/synchronizer.h"
 #include "message_filters/sync_policies/approximate_time.h"
@@ -69,6 +73,13 @@ private:
   @brief Publish motors arming state to SE3 controller node
   */
   void publishMotorState();
+
+  /*
+  @brief Publish a DiagnosticStatus summarising the mavros bridge for ground
+  monitoring: commanded throttle, thrust-map health, arming, and whether the
+  command-timeout failsafe is active. Observation only.
+  */
+  void publishStatus();
 
   rclcpp::Subscription<mav_controllers_ros::msg::SE3Command>::SharedPtr se3_cmd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -124,6 +135,17 @@ private:
   double cmd_timeout_hold_duration_;  // s of level hold before going silent
   rclcpp::Time cmd_timeout_start_;
   bool in_cmd_timeout_;
+
+  // --- Ground-monitoring telemetry (observation only) ----------------
+  // The throttle actually sent to PX4 and the command-timeout failsafe
+  // state are invisible from outside this node; a ground station cannot
+  // otherwise tell "hovering at 45% throttle" from "saturated at 100%".
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr status_pub_;
+  rclcpp::TimerBase::SharedPtr status_timer_;
+  double last_throttle_{0.0};         // normalized [0,1] as published
+  double last_throttle_raw_{0.0};     // before clamping / disarm zeroing
+  double last_thrust_n_{0.0};         // collective thrust command [N]
+  bool cmd_stream_silent_{false};     // past the hold window: PX4 failsafe
 
   rclcpp::Clock::SharedPtr clock_ = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
   
@@ -267,6 +289,19 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
   motors_state_pub_ = this->create_publisher<std_msgs::msg::Bool>("geometric_controller/enable_motors", 10);
   thrust_scale_pub_ = this->create_publisher<std_msgs::msg::Float64>("geometric_mavros/thrust_scale_estimate", 10);
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("geometric_mavros/combined_odometry", rclcpp::SensorDataQoS());
+
+  // Low-rate health status for the ground station (see status_rate in the
+  // controller node; same contract, so panels treat both the same way).
+  this->declare_parameter("status_rate", 5.0);
+  const double status_rate = this->get_parameter("status_rate").get_parameter_value().get<double>();
+  if(status_rate > 0.0)
+  {
+    status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(
+        "geometric_mavros/status", 10);
+    status_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / status_rate),
+        std::bind(&SE3ControllerToMavros::publishStatus, this));
+  }
   
 
   se3_cmd_sub_ = this->create_subscription<mav_controllers_ros::msg::SE3Command>(
@@ -365,6 +400,7 @@ SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
                    dt, cmd_timeout_hold_duration_);
     }
     const double in_timeout_for = (this->now() - cmd_timeout_start_).seconds();
+    cmd_stream_silent_ = in_timeout_for > cmd_timeout_hold_duration_;
     if(in_timeout_for <= cmd_timeout_hold_duration_)
     {
       mavros_msgs::msg::AttitudeTarget failsafe_msg;
@@ -380,16 +416,24 @@ SE3ControllerToMavros::imuCallback(const sensor_msgs::msg::Imu &msg)
       if(!motors_armed_)
         failsafe_msg.thrust = 0.0;
       attitude_raw_pub_->publish(failsafe_msg);
+      // Report what is actually going out, not the last commanded value.
+      last_throttle_ = failsafe_msg.thrust;
+      last_throttle_raw_ = failsafe_msg.thrust;
     }
     else
     {
       RCLCPP_ERROR_THROTTLE(this->get_logger(), *(clock_.get()), 2000,
                             "SE3 command stream still lost; setpoints stopped, PX4 failsafe active.");
+      // Nothing is being published any more; a reported throttle would be
+      // a stale number the vehicle is not receiving.
+      last_throttle_ = 0.0;
+      last_throttle_raw_ = 0.0;
     }
   }
   else
   {
     in_cmd_timeout_ = false;
+    cmd_stream_silent_ = false;
   }
 }
 
@@ -503,6 +547,8 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
     thrust_scale_pub_->publish(est_msg);
   }
 
+  last_thrust_n_ = throttle;  // collective thrust command [N], pre-normalization
+
   // normalize using the maximum thrust by all motors
   // There is also thrust scaling in mavros (px4_config.yaml), but we will do it here, and keep the the MAVROS scaling at its default=1
   // MAVROS scaling: thrust := thrust * thrust_scaling
@@ -511,6 +557,7 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
   // produces more thrust than max_thrust_ implies (scale > 1), less
   // normalized throttle is needed, and vice versa.
   throttle = throttle / (max_thrust_ * thrust_scale_est_);
+  last_throttle_raw_ = throttle;
 
   // failsafe for the error in traj_gen that can lead to nan values
   //prevents throttle from being sent to 1 if it is nan.
@@ -527,6 +574,8 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
 
   if(!motors_armed_)
     throttle = 0;
+
+  last_throttle_ = throttle;
 
   // publish messages
   mavros_msgs::msg::AttitudeTarget setpoint_msg;
@@ -552,6 +601,94 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
 
 }
 
+
+// Health snapshot of the mavros bridge. Reports state the node already
+// maintains; it neither computes nor influences anything on the command path.
+void
+SE3ControllerToMavros::publishStatus()
+{
+  if(!status_pub_)
+    return;
+
+  const double cmd_age = so3_cmd_set_ ? (this->now() - last_se3_cmd_time_).seconds()
+                                      : std::numeric_limits<double>::infinity();
+
+  diagnostic_msgs::msg::DiagnosticStatus st;
+  st.name = "geometric_mavros";
+  st.hardware_id = this->get_name();
+
+  if(cmd_stream_silent_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    st.message = "SE3 command lost - setpoints stopped, PX4 failsafe active";
+  }
+  else if(in_cmd_timeout_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    st.message = "SE3 command timeout - level hover hold";
+  }
+  else if(!so3_cmd_set_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    st.message = "no SE3 command received yet";
+  }
+  else if(motors_armed_ && last_throttle_raw_ >= 0.98)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    st.message = "throttle saturated";
+  }
+  else if(!motors_armed_)
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    st.message = "disarmed";
+  }
+  else
+  {
+    st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    st.message = "commanding";
+  }
+
+  auto add = [&st](const char * key, const std::string & value) {
+    diagnostic_msgs::msg::KeyValue kv;
+    kv.key = key;
+    kv.value = value;
+    st.values.push_back(kv);
+  };
+  auto num = [](double v, int prec = 3) {
+    if(!std::isfinite(v))
+      return std::string("inf");
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.*f", prec, v);
+    return std::string(buf);
+  };
+  auto bl = [](bool v) { return std::string(v ? "true" : "false"); };
+
+  add("armed", bl(motors_armed_));
+  add("se3_cmd_age_s", num(cmd_age));
+  add("se3_cmd_timeout_s", num(se3_cmd_timeout_));
+  add("cmd_timeout_active", bl(in_cmd_timeout_));
+  add("setpoints_stopped", bl(cmd_stream_silent_));
+  add("odom_set", bl(odom_set_));
+  add("imu_set", bl(imu_set_));
+
+  // Throttle: what PX4 actually receives, plus the unclamped value so a
+  // saturated command is distinguishable from one that just reached 1.0.
+  add("throttle", num(last_throttle_, 3));
+  add("throttle_raw", num(last_throttle_raw_, 3));
+  add("thrust_cmd_n", num(last_thrust_n_, 2));
+
+  // Thrust map: the single most common cause of a controller that tracks
+  // badly with correct gains.
+  add("max_thrust_n", num(max_thrust_, 2));
+  add("thrust_scale_est", num(thrust_scale_est_, 3));
+  add("max_thrust_effective_n", num(max_thrust_ * thrust_scale_est_, 2));
+  add("thrust_estimator_enabled", bl(enable_thrust_estimator_));
+  add("mass_kg", num(vehicle_mass_, 3));
+  if(vehicle_mass_ > 0.0 && max_thrust_ > 0.0)
+    add("hover_throttle_pred", num(vehicle_mass_ * 9.81 / (max_thrust_ * thrust_scale_est_), 3));
+
+  status_pub_->publish(st);
+}
 
 /**
  * Main function

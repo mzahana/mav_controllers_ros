@@ -69,3 +69,13 @@ geometric_mavros_node:
     # max_thrust rather than widening these.
     thrust_est_min: 0.8
     thrust_est_max: 1.25
+
+    # --- Ground monitoring ---
+
+    # Rate [Hz] of the DiagnosticStatus published on geometric_mavros/status:
+    # the throttle actually sent to PX4, thrust-map health (max_thrust vs the
+    # online estimate, predicted hover throttle), arming, and whether the
+    # command-timeout failsafe is holding level or has stopped setpoints so
+    # PX4's own failsafe can take over. None of that is otherwise visible
+    # from outside this node. Observation only. 0 disables.
+    status_rate: 5.0

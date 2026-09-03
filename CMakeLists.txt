@@ -22,6 +22,7 @@ find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetCommand.msg"
@@ -120,6 +121,7 @@ ament_target_dependencies(geometric_controller_node
                           tf2_ros 
                           tf2_geometry_msgs 
                           rclcpp 
+                          diagnostic_msgs
                           Eigen3)
 
 target_link_libraries(geometric_controller_node geometric_controller)
@@ -177,6 +179,7 @@ ament_target_dependencies(geometric_mavros_node
                           tf2_geometry_msgs
                           rclcpp
                           message_filters
+                          diagnostic_msgs
                           Eigen3)
 
 # target_link_libraries(se3_controller_node se3controller)
