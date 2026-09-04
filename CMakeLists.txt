@@ -233,7 +233,7 @@ install(TARGETS
 #
 add_executable(trajectory_test_node test/trajectory_test_node.cpp)
 ament_target_dependencies(trajectory_test_node
-  rclcpp nav_msgs geometry_msgs std_msgs std_srvs mavros_msgs tf2 tf2_ros)
+  rclcpp nav_msgs geometry_msgs std_msgs std_srvs mavros_msgs diagnostic_msgs tf2 tf2_ros)
 target_include_directories(trajectory_test_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

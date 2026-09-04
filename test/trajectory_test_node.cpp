@@ -27,6 +27,16 @@
  * Services (std_srvs/Trigger):
  *   ~/start : plan from the current state and begin the trajectory.
  *   ~/stop  : ramp down smoothly and hold.
+ *
+ * Status:
+ *   trajectory_test/status : std_msgs/String, the phase name, published on
+ *     every transition.
+ *   trajectory_test/health : diagnostic_msgs/DiagnosticStatus at a steady
+ *     rate. The String above only fires on a transition, so a ground station
+ *     that connects mid-flight sees nothing and cannot tell WHY a start would
+ *     be refused. This carries the phase, each engagement precondition, the
+ *     achieved-vs-requested speed after derating, geofence margins, and the
+ *     last plan report.
  */
 
 #include <rclcpp/rclcpp.hpp>
@@ -36,6 +46,8 @@
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
 #include <mavros_msgs/msg/state.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -45,6 +57,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 using std::placeholders::_1;
@@ -106,6 +119,11 @@ public:
     path_pub_ = create_publisher<nav_msgs::msg::Path>(
         "trajectory_test/planned_path", rclcpp::QoS(1).transient_local());
     status_pub_ = create_publisher<std_msgs::msg::String>("trajectory_test/status", 10);
+    // Steady-rate health for a ground station: the String above only fires
+    // on a phase transition, so a panel that connects mid-flight would see
+    // nothing at all until something changed.
+    health_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(
+        "trajectory_test/health", 10);
 
     // RViz tracking-quality visualization: the commanded reference trace, the
     // actually flown trace (overlay them to see tracking error), and the
@@ -130,6 +148,13 @@ public:
         "trajectory_test/start", std::bind(&TrajectoryTestNode::startService, this, _1, _2));
     stop_srv_ = create_service<std_srvs::srv::Trigger>(
         "trajectory_test/stop", std::bind(&TrajectoryTestNode::stopService, this, _1, _2));
+
+    declare_parameter("health_rate", 5.0);
+    const double health_rate = get_parameter("health_rate").as_double();
+    if (health_rate > 0.0) {
+      health_timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / health_rate),
+                                        std::bind(&TrajectoryTestNode::publishHealth, this));
+    }
 
     const double rate = get_parameter("publish_rate").as_double();
     dt_ = 1.0 / std::max(rate, 1.0);
@@ -267,6 +292,8 @@ private:
     }
     std::string report;
     if (!planFromCurrentState(report)) {
+      last_plan_report_ = report;
+      last_plan_ok_ = false;
       res->success = false;
       res->message = "Plan rejected: " + report;
       return;
@@ -443,6 +470,9 @@ private:
         omega_ = std::min(omega_, std::sqrt(std::max(a_max_ - ramp_acc_extra, 0.1) / m2));
 
       const double v_ach = omega_ * m1, a_ach = omega_ * omega_ * m2;
+      v_achieved_ = v_ach;
+      a_achieved_ = a_ach;
+      entry_distance_ = best_d;
       theta0_ = th_nearest;
       Vec3 p0, d1, d2, d3;
       curve(theta0_, p0, d1, d2, d3);
@@ -466,9 +496,39 @@ private:
       const double rmax = get_parameter("geofence.max_radius_xy").as_double();
       const double zmin = get_parameter("geofence.min_z").as_double();
       const double zmax = get_parameter("geofence.max_z").as_double();
+      // Name the limit that was breached and by how much. "violates the
+      // geofence" sends you reading yaml to work out which of three
+      // numbers you hit -- and the two that are easy to confuse are the
+      // XY radius, measured from the pose at START, and the z limits,
+      // which are absolute altitudes in the local frame.
+      char fence_buf[256] = {0};
       auto inFence = [&](const Vec3 & p) {
-        const double dx = p.x - origin_.x, dy = p.y - origin_.y;
-        return std::hypot(dx, dy) <= rmax && p.z >= zmin && p.z <= zmax;
+        const double dxy = std::hypot(p.x - origin_.x, p.y - origin_.y);
+        if (dxy > rmax) {
+          snprintf(fence_buf, sizeof(fence_buf),
+                   "path point (%.1f, %.1f, %.1f) is %.1f m from the start pose, "
+                   "beyond geofence.max_radius_xy = %.1f m",
+                   p.x, p.y, p.z, dxy, rmax);
+          return false;
+        }
+        if (p.z < zmin) {
+          snprintf(fence_buf, sizeof(fence_buf),
+                   "path point (%.1f, %.1f, %.1f) is below geofence.min_z = %.1f m. "
+                   "With relative_to_start disabled, %s is an ABSOLUTE local-frame "
+                   "altitude measured from the frame origin, not from the vehicle, so "
+                   "0 is the ground.",
+                   p.x, p.y, p.z, zmin,
+                   traj_type_ == 0 ? "setpoint.z"
+                                   : (traj_type_ == 1 ? "circle.z" : "lemniscate.z"));
+          return false;
+        }
+        if (p.z > zmax) {
+          snprintf(fence_buf, sizeof(fence_buf),
+                   "path point (%.1f, %.1f, %.1f) is above geofence.max_z = %.1f m",
+                   p.x, p.y, p.z, zmax);
+          return false;
+        }
+        return true;
       };
       bool ok = inFence(goto_target_.p);
       if (traj_type_ != 0) {
@@ -479,8 +539,7 @@ private:
         }
       }
       if (!ok) {
-        report = "planned path violates geofence (max_radius_xy=" + std::to_string(rmax) +
-                 ", z in [" + std::to_string(zmin) + ", " + std::to_string(zmax) + "]).";
+        report = std::string("geofence: ") + fence_buf;
         return false;
       }
     }
@@ -491,6 +550,8 @@ private:
 
     publishPlannedPath();
     report = buf;
+    last_plan_report_ = report;
+    last_plan_ok_ = true;
     RCLCPP_INFO(get_logger(), "Plan accepted: %s", report.c_str());
     return true;
   }
@@ -797,6 +858,93 @@ private:
     }
   }
 
+  // Steady-rate health snapshot for a ground station. Observation only:
+  // every value here is state the node already maintains, and publishing
+  // it cannot change what the node commands.
+  void publishHealth()
+  {
+    static const char * kPhaseNames[] = {"HOLD", "GOTO", "TRACK", "STOPPING"};
+
+    std::string why;
+    const bool is_engaged = engaged(why);
+
+    diagnostic_msgs::msg::DiagnosticStatus st;
+    st.name = "trajectory_test";
+    st.hardware_id = get_name();
+
+    if (!have_odom_) {
+      st.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      st.message = "no odometry";
+    } else if (phase_ != Phase::HOLD) {
+      st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      st.message = std::string("flying: ") + kPhaseNames[static_cast<int>(phase_)];
+    } else if (is_engaged) {
+      st.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      st.message = "holding - ready to start";
+    } else {
+      // Not an error: sitting on the ground disengaged is the normal
+      // state before a test. It just cannot start yet, and the reason
+      // is the single most useful thing to show.
+      st.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      st.message = "holding - cannot start: " + why;
+    }
+
+    auto add = [&st](const char * key, const std::string & value) {
+      diagnostic_msgs::msg::KeyValue kv;
+      kv.key = key;
+      kv.value = value;
+      st.values.push_back(kv);
+    };
+    auto num = [](double v, int prec = 2) {
+      char buf2[48];
+      std::snprintf(buf2, sizeof(buf2), "%.*f", prec, v);
+      return std::string(buf2);
+    };
+    auto bl = [](bool v) { return std::string(v ? "true" : "false"); };
+
+    add("phase", kPhaseNames[static_cast<int>(phase_)]);
+    add("phase_time_s", num(phase_time_));
+    add("engaged", bl(is_engaged));
+    add("blocked_reason", is_engaged ? "" : why);
+
+    // Each precondition separately, so the panel can show which one to fix
+    // rather than only the first that failed.
+    add("odom_fresh", bl(odomFresh()));
+    add("offboard", bl(offboard_));
+    add("armed", bl(armed_));
+    add("motors_enabled", bl(motors_enabled_));
+
+    add("trajectory_type", get_parameter("trajectory_type").as_string());
+    add("yaw_mode", get_parameter("yaw_mode").as_string());
+    add("speed_requested", num(get_parameter("speed").as_double()));
+    add("speed_achieved", num(v_achieved_));
+    add("accel_achieved", num(a_achieved_));
+    add("entry_distance_m", num(entry_distance_));
+    add("radius", num(get_parameter("circle.radius").as_double()));
+    add("width", num(get_parameter("lemniscate.width").as_double()));
+    add("last_plan_ok", bl(last_plan_ok_));
+    add("last_plan_report", last_plan_report_);
+
+    // Geofence: the limits plus where the vehicle actually is inside them.
+    const bool fence_on = get_parameter("geofence.enable").as_bool();
+    add("geofence_enabled", bl(fence_on));
+    add("geofence_max_radius_xy", num(get_parameter("geofence.max_radius_xy").as_double()));
+    add("geofence_min_z", num(get_parameter("geofence.min_z").as_double()));
+    add("geofence_max_z", num(get_parameter("geofence.max_z").as_double()));
+    if (have_odom_) {
+      // The fence is measured from the position captured at the last start
+      // trigger, which is only meaningful once a plan exists.
+      const double dxy = std::hypot(odom_pos_.x - origin_.x, odom_pos_.y - origin_.y);
+      add("dist_from_origin_xy", last_plan_ok_ ? num(dxy) : std::string("-"));
+      add("altitude_m", num(odom_pos_.z));
+    } else {
+      add("dist_from_origin_xy", "-");
+      add("altitude_m", "-");
+    }
+
+    health_pub_->publish(st);
+  }
+
   void setPhase(Phase p)
   {
     if (p == phase_) return;
@@ -817,6 +965,8 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr ref_path_pub_, actual_path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr setpoint_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr health_pub_;
+  rclcpp::TimerBase::SharedPtr health_timer_;
   nav_msgs::msg::Path ref_path_msg_, actual_path_msg_;
   int viz_tick_{0};
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -861,6 +1011,12 @@ private:
   struct { Vec3 p; double yaw{0.0}; } goto_start_, goto_target_;
   double goto_T_{1.0};
   double stop_theta0_{0.0};
+
+  // Last plan summary, surfaced on the health topic so a ground station
+  // can see what the node actually committed to (derating included).
+  std::string last_plan_report_{"no plan yet"};
+  bool last_plan_ok_{false};
+  double v_achieved_{0.0}, a_achieved_{0.0}, entry_distance_{0.0};
 
   // Yaw limiter memory
   double last_cmd_yaw_{0.0};

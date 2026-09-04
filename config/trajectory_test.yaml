@@ -21,6 +21,14 @@
     trajectory_type: "circle"      # setpoint | circle | lemniscate
     publish_rate: 100.0            # [Hz] setpoint stream rate
 
+    # Rate [Hz] of trajectory_test/health (diagnostic_msgs/DiagnosticStatus):
+    # phase, each engagement precondition and why a start would be refused,
+    # the achieved-vs-requested speed after derating, and geofence margins.
+    # The plain trajectory_test/status String only fires on a phase change,
+    # so a ground station connecting mid-flight would otherwise see nothing.
+    # Observation only. 0 disables.
+    health_rate: 5.0
+
     # Interpret setpoint/center below as offsets from the pose at the start
     # trigger (true, recommended in the field) or absolute local coordinates.
     relative_to_start: true
@@ -62,6 +70,11 @@
                                    # tangent: face direction of travel
                                    # center : face trajectory center
 
+    # NOTE the asymmetry, which is easy to trip over: max_radius_xy is
+    # measured from the pose captured at the START trigger, while min_z and
+    # max_z are ABSOLUTE altitudes in the local frame. So with
+    # relative_to_start disabled, a setpoint of (0, 0, 0) means the frame
+    # origin at ground level and is rejected by min_z.
     geofence:
       enable: true                 # abort to HOLD on any breach below
       max_radius_xy: 20.0          # [m] from the pose at start trigger
