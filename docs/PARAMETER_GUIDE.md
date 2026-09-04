@@ -325,3 +325,44 @@ This is what makes in-flight auto-tuning possible.
 - [geo_tuner](https://github.com/mzahana/geo_tuner) — gain design and in-flight
   auto-tuning; its `docs/TUNING_GUIDE.md` carries the full derivations, and
   `docs/FIELD_CHECKLIST.md` is the printable field procedure
+
+## Persisting gains changed in flight
+
+A parameter write -- from `ros2 param set`, or from the RViz gain panel on a
+laptop -- changes the running node's memory only. It is lost on the next
+restart or power cycle. That is deliberate: a bad gain set at 20 m cannot
+survive a reboot.
+
+To keep a change, run `gain_saver` **on the vehicle** and call its service:
+
+```bash
+ros2 launch mav_controllers_ros gain_saver.launch.py controller_ns:=interceptor
+ros2 service call /gain_saver/save std_srvs/srv/SetBool "{data: false}"
+```
+
+It reads the live values and writes two override files:
+
+```
+<config dir>/geometric_controller.override.yaml
+<config dir>/geometric_mavros.override.yaml
+```
+
+`<config dir>` is resolved by `launch/config_dir.py`: `$MAV_CONTROLLERS_CONFIG_DIR`
+if set, else a shared-volume mount (`~/shared_volume/mav_controllers_config`),
+else the mount the workspace itself is installed under, else
+`~/.ros/mav_controllers_ros`. On the Jetson the stack runs in a container, so
+the default lands on the host-mounted volume -- the container filesystem does
+not survive being recreated, and neither the installed package (wiped by
+colcon) nor the source tree (must stay clean in git) is an acceptable place to
+write.
+
+`geometric_controller.launch.py` and `geometric_to_mavros.launch.py` load those
+files **after** the shipped config, so the saved values win. Delete a file to
+fall back to the package defaults. Writes are atomic and the previous version is
+kept as a timestamped `.bak`, so a save can never leave a config that fails to
+parse at the next boot.
+
+`data: true` additionally corrects `max_thrust` by the online thrust-scale
+estimate, capturing what the vehicle learned in flight. It is **refused while
+armed**: `max_thrust` linearly scales every position gain, so changing it
+retunes the whole controller at once.

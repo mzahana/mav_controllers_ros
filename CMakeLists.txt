@@ -247,6 +247,12 @@ install(TARGETS
 
 ###########################
 # Install launch files
+# Vehicle-side helper: persists the live gains to override YAML. Python,
+# because it is a filesystem chore, not a control-path node.
+install(PROGRAMS scripts/gain_saver.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}/
 )

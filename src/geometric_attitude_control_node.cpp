@@ -302,6 +302,15 @@ GeometricControlNode::GeometricControlNode(): Node("geometric_control_node"),
 
   controller_.resetIntegrals();
 
+  // The active gains are normally refreshed by each incoming setpoint (which
+  // may carry its own), but before the first setpoint they were left unset --
+  // so a ground station reading them saw stale values, and attctrl_tau read
+  // as 0. Start them at the configured values.
+  kx_ = config_kx_;
+  kv_ = config_kv_;
+  kd_ = config_kd_;
+  attctrl_tau_ = config_attctrl_tau_;
+
   /* Define subscribers and publishers */
 
   se3_command_pub_ = this->create_publisher<mav_controllers_ros::msg::SE3Command>("geometric_controller/cmd", 10);
@@ -810,6 +819,11 @@ GeometricControlNode::publishStatus()
   add("kv", num(kv_(0), 2) + "," + num(kv_(1), 2) + "," + num(kv_(2), 2));
   add("ki", num(config_ki_(0), 3) + "," + num(config_ki_(1), 3) + "," + num(config_ki_(2), 3));
   add("attctrl_tau", num(attctrl_tau_, 3));
+  // The configured values, for comparison: they differ from the active ones
+  // only while a setpoint stream is supplying per-message gains.
+  add("kx_config", num(config_kx_(0), 2) + "," + num(config_kx_(1), 2) + "," + num(config_kx_(2), 2));
+  add("kv_config", num(config_kv_(0), 2) + "," + num(config_kv_(1), 2) + "," + num(config_kv_(2), 2));
+  add("attctrl_tau_config", num(config_attctrl_tau_, 3));
 
   // Setpoint being tracked
   add("des_pos", num(des_pos_(0), 2) + "," + num(des_pos_(1), 2) + "," + num(des_pos_(2), 2));
@@ -960,6 +974,16 @@ rcl_interfaces::msg::SetParametersResult  GeometricControlNode::param_callback(c
       controller_.setYawCtrlTau(v);
     }
   }
+
+  // Mirror the new configuration into the active gains as well. Without
+  // this a parameter change is invisible -- to the controller AND to a
+  // ground station reading the status topic -- until the next setpoint
+  // arrives, which on the ground may be never. A setpoint carrying its own
+  // gains still wins on the very next message, as before.
+  kx_ = config_kx_;
+  kv_ = config_kv_;
+  kd_ = config_kd_;
+  attctrl_tau_ = config_attctrl_tau_;
 
   return result;
 }

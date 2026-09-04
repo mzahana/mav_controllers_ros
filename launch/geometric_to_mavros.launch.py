@@ -6,6 +6,15 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+import sys
+
+from ament_index_python.packages import get_package_share_directory
+
+# The override-directory resolver is shared with gain_saver and the other
+# launch files; see launch/config_dir.py.
+sys.path.insert(0, os.path.join(get_package_share_directory('mav_controllers_ros'), 'launch'))
+from config_dir import override_path  # noqa: E402
+
 def generate_launch_description():
     # Path to the default YAML config file
     default_param_file = os.path.join(
@@ -36,7 +45,11 @@ def generate_launch_description():
         name='geometric_mavros_node',
         namespace=LaunchConfiguration('mavros_ns'),
         output='screen',
-        parameters=[LaunchConfiguration('param_file')],
+        # The override file, when present, is listed AFTER the shipped
+        # config so its values win (gain_saver writes it on the vehicle).
+        parameters=([LaunchConfiguration('param_file')] +
+                    ([override_path('geometric_mavros.override.yaml')]
+                     if override_path('geometric_mavros.override.yaml') else [])),
         remappings=[
             ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'), # pub
             ('geometric_mavros/combined_odometry', 'geometric_controller/odom'), # pub

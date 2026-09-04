@@ -6,6 +6,15 @@ from launch.substitutions import LaunchConfiguration, ThisLaunchFileDir
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+import sys
+
+from ament_index_python.packages import get_package_share_directory
+
+# The override-directory resolver is shared with gain_saver and the other
+# launch files; see launch/config_dir.py.
+sys.path.insert(0, os.path.join(get_package_share_directory('mav_controllers_ros'), 'launch'))
+from config_dir import override_path  # noqa: E402
+
 def generate_launch_description():
 
     # Define the path to the default YAML file
@@ -37,7 +46,12 @@ def generate_launch_description():
         name='geometric_controller_node',
         namespace=LaunchConfiguration('controller_ns'),
         output='screen',
-        parameters=[LaunchConfiguration('yaml_path')],
+        # The override file, when present, is listed AFTER the shipped
+        # config so its values win. It is written on the vehicle by
+        # gain_saver; delete it to fall back to the package defaults.
+        parameters=([LaunchConfiguration('yaml_path')] +
+                    ([override_path('geometric_controller.override.yaml')]
+                     if override_path('geometric_controller.override.yaml') else [])),
         remappings=[
             ('geometric_controller/setpoint', 'geometric_controller/setpoint'), # sub
             ('geometric_controller/odom', 'geometric_controller/odom'), # sub

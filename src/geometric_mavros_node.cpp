@@ -151,6 +151,12 @@ private:
   
   // from MAVROS state msg
   bool motors_armed_;
+  // The thrust-scale estimator compares OUR commanded thrust against the
+  // measured acceleration. That comparison is only meaningful while PX4 is
+  // actually flying on our setpoints: in LOITER or POSCTL the acceleration
+  // is the result of PX4's own throttle, and the estimate drifts to a value
+  // that describes nothing.
+  bool offboard_{false};
 
 
 };
@@ -333,6 +339,7 @@ void
 SE3ControllerToMavros::mavrosStateCallback(const mavros_msgs::msg::State & msg)
 {
   motors_armed_ = msg.armed;
+  offboard_ = (msg.mode == "OFFBOARD");
   std_msgs::msg::Bool motors_state_msg;
   motors_state_msg.data = motors_armed_;
   motors_state_pub_->publish(motors_state_msg);
@@ -526,7 +533,7 @@ SE3ControllerToMavros::cmdCallback(const mav_controllers_ros::msg::SE3Command & 
     {
       const double dt_est = (now_t - last_cmd_cb_time_).seconds();
       const double u_norm = throttle / max_thrust_;  // pre-correction normalized cmd
-      const bool gate = motors_armed_ &&
+      const bool gate = motors_armed_ && offboard_ &&
                         dt_est > 0.0 && dt_est < 0.5 &&
                         u_norm > 0.15 && u_norm < 0.9 &&
                         imu_rate_norm_ < 1.0 &&
@@ -683,6 +690,10 @@ SE3ControllerToMavros::publishStatus()
   add("thrust_scale_est", num(thrust_scale_est_, 3));
   add("max_thrust_effective_n", num(max_thrust_ * thrust_scale_est_, 2));
   add("thrust_estimator_enabled", bl(enable_thrust_estimator_));
+  // Whether the estimate is currently being updated at all. Without this a
+  // stale value from an earlier flight looks like a live measurement.
+  add("thrust_estimator_active", bl(enable_thrust_estimator_ && motors_armed_ && offboard_));
+  add("offboard", bl(offboard_));
   add("mass_kg", num(vehicle_mass_, 3));
   if(vehicle_mass_ > 0.0 && max_thrust_ > 0.0)
     add("hover_throttle_pred", num(vehicle_mass_ * 9.81 / (max_thrust_ * thrust_scale_est_), 3));
