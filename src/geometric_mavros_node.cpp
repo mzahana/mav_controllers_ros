@@ -357,6 +357,24 @@ void SE3ControllerToMavros::poseAndTwistCallback(const geometry_msgs::msg::PoseS
   nav_msgs::msg::Odometry odometry_msg;
 
   odometry_msg.header = pose->header; // use the timestamp from one of the synchronized messages
+
+  // nav_msgs/Odometry expresses `twist` in child_frame_id -- not necessarily in a body
+  // frame, which is only the usual convention. The twist below is copied verbatim from
+  // mavros/local_position/velocity_local, which is already ENU world, so naming the
+  // world frame here is what makes this message say what it actually carries.
+  //
+  // Leaving child_frame_id empty (as this did) makes the twist frame undeclared, and a
+  // consumer that assumes the usual body-frame convention gets a velocity wrong by the
+  // vehicle's heading -- which looks perfectly correct in any test flown along +x.
+  //
+  // Deliberately NOT rotating the twist into the body frame instead. Every consumer of
+  // this topic wants world (the geometric controller differences it against a world
+  // reference; mav_navigator_ros uses it for its trajectory entry boundary and for
+  // vertical touchdown detection), so rotating here would only make each of them rotate
+  // it back, injecting the attitude estimate's noise and lag into a clean signal twice
+  // over for no numerical gain.
+  odometry_msg.child_frame_id = pose->header.frame_id;
+
   odometry_msg.pose.pose = pose->pose;
   odometry_msg.twist.twist = twist->twist;
 
