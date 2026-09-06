@@ -1,7 +1,7 @@
 """Everything the RViz field panels need, running ON THE VEHICLE.
 
 The panels themselves run on a ground-station laptop
-(`ros2 launch geo_tuner_rviz_plugins field_monitor.launch.py`); this launch
+(`ros2 launch geo_tuner field_monitor.launch.py`); this launch
 starts the two nodes they talk to, which must be on the vehicle:
 
   gain_saver           persists gains changed from the panel, by writing the
