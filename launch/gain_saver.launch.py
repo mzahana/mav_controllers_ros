@@ -24,7 +24,9 @@ def generate_launch_description():
             'output_dir', default_value='',
             description='Where the override YAML is written. Empty resolves '
                         'the same way the controller launch files do (shared '
-                        'volume on the vehicle); see launch/config_dir.py.'),
+                        'volume on the vehicle); see launch/config_dir.py. '
+                        'Also settable at runtime -- the RViz gain panel sets '
+                        'it from its override dir box.'),
         Node(
             package='mav_controllers_ros',
             executable='gain_saver.py',

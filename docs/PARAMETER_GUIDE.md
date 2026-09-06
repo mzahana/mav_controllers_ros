@@ -366,3 +366,22 @@ parse at the next boot.
 estimate, capturing what the vehicle learned in flight. It is **refused while
 armed**: `max_thrust` linearly scales every position gain, so changing it
 retunes the whole controller at once.
+
+### Changing where it writes
+
+`gain_saver`'s `output_dir` parameter overrides `<config dir>`. It is re-read on
+every save, so it can be set at runtime -- which is what the **override dir**
+box in the RViz gain panel does before it calls the service:
+
+```bash
+ros2 param get /gain_saver output_dir          # the resolved default
+ros2 param set /gain_saver output_dir /media/usb/gains
+ros2 param set /gain_saver output_dir ""       # back to the default
+```
+
+The value is stored as an absolute path (`~` expanded, empty resolved to the
+default), so reading it back always names a real directory; a relative path is
+rejected, because the working directory on the vehicle is whatever systemd or
+docker chose. The launch files still read `<config dir>` only, so a save to
+anywhere else says so in its response: set `$MAV_CONTROLLERS_CONFIG_DIR` to
+match, or copy the files across, or nothing will load them at the next boot.
