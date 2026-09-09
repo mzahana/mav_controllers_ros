@@ -41,9 +41,10 @@ Parameters
       the save response says so: an override nothing loads looks like it
       worked and is worse than no persistence at all.
 
-Only the parameters listed in CONTROLLER_KEYS / MAVROS_KEYS are written, so an
-override file stays small and reviewable rather than a dump of every parameter
-a node happens to declare.
+The parameters listed in CONTROLLER_KEYS / MAVROS_KEYS are written -- the FULL
+set each shipped config file carries, so an override reads as a complete,
+self-contained copy of the config it replaces. A key the running node does not
+declare (an older build) is skipped rather than written as null.
 """
 
 import os
@@ -70,14 +71,32 @@ from std_srvs.srv import SetBool
 sys.path.insert(0, os.path.join(get_package_share_directory("mav_controllers_ros"), "launch"))
 from config_dir import ENV_VAR, resolve_config_dir  # noqa: E402
 
+# Mirrors ihunter_system's geometric_controller.yaml key for key, so the
+# override file is a complete drop-in copy of it, not a fragment.
 CONTROLLER_KEYS = [
+    "mass",
+    "use_external_yaw",
     "gains.pos.x", "gains.pos.y", "gains.pos.z",
     "gains.vel.x", "gains.vel.y", "gains.vel.z",
     "gains.ki.x", "gains.ki.y", "gains.ki.z",
+    "gains.kib.x", "gains.kib.y", "gains.kib.z",
+    "drag.kd.x", "drag.kd.y", "drag.kd.z",
     "attctrl_tau", "yawctrl_tau",
+    "max_pos_int", "mas_pos_int_b",
+    "max_tilt_angle", "max_accel",
+    "yaw_gain",
+    "enable_rate_feedforward",
+    "odom_timeout", "setpoint_timeout", "hold_on_setpoint_timeout",
 ]
 
-MAVROS_KEYS = ["max_thrust", "mass"]
+# Mirrors geometric_mavros.yaml the same way.
+MAVROS_KEYS = [
+    "num_props", "kf", "lin_cof_a", "lin_int_b",
+    "max_thrust", "mass",
+    "se3_cmd_timeout", "cmd_timeout_hold_duration",
+    "enable_thrust_estimator", "thrust_est_tau",
+    "thrust_est_min", "thrust_est_max",
+]
 
 
 def unflatten(flat: dict) -> dict:
