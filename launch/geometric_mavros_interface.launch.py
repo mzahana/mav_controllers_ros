@@ -27,6 +27,13 @@ def generate_launch_description():
         description='Path to the YAML file with parameters for the geometric_attitude_controller node'
     )
 
+    session_params_arg = DeclareLaunchArgument(
+        'geometric_mavros_session_params',
+        default_value='',
+        description='Optional YAML loaded last (after config and override); '
+                    'see geometric_to_mavros.launch.py session_params.'
+    )
+
     param_file_arg = DeclareLaunchArgument(
         'geometric_mavros_yaml',
         default_value=default_geometric_mavros_yaml,
@@ -61,12 +68,14 @@ def generate_launch_description():
     # Include geometric_to_mavros.launch.py
     geometric_to_mavros_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/geometric_to_mavros.launch.py']),
-        launch_arguments={'param_file': LaunchConfiguration('geometric_mavros_yaml')}.items()
+        launch_arguments={'param_file': LaunchConfiguration('geometric_mavros_yaml'),
+                          'session_params': LaunchConfiguration('geometric_mavros_session_params')}.items()
     )
 
     return LaunchDescription([
         yaml_path_arg,
         param_file_arg,
+        session_params_arg,
         mavros_launch,
         geometric_controller_launch,
         geometric_to_mavros_launch,

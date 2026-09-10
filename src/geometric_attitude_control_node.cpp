@@ -110,7 +110,14 @@ private:
   
   GeometricAttitudeControl controller_; /* Geometric Controller object */
 
-  Eigen::Vector3f des_pos_, des_vel_, des_acc_, des_jrk_, config_kx_, config_kv_, config_ki_, config_kd_, kx_, kv_, kd_;
+  // Zero-initialised: the status publisher reads these before the first
+  // setpoint/parameter load, and Eigen members carry stack garbage
+  // otherwise (T7).
+  Eigen::Vector3f des_pos_{Eigen::Vector3f::Zero()}, des_vel_{Eigen::Vector3f::Zero()},
+    des_acc_{Eigen::Vector3f::Zero()}, des_jrk_{Eigen::Vector3f::Zero()},
+    config_kx_{Eigen::Vector3f::Zero()}, config_kv_{Eigen::Vector3f::Zero()},
+    config_ki_{Eigen::Vector3f::Zero()}, config_kd_{Eigen::Vector3f::Zero()},
+    kx_{Eigen::Vector3f::Zero()}, kv_{Eigen::Vector3f::Zero()}, kd_{Eigen::Vector3f::Zero()};
   float attctrl_tau_, config_attctrl_tau_;
   // Watchdogs: reject control on stale odometry; reset integrals after a
   // gap in the setpoint stream.
@@ -138,8 +145,8 @@ private:
   bool have_prev_odom_{false}, have_prev_setpoint_{false}, have_prev_control_{false};
   double odom_rate_hz_{0.0}, setpoint_rate_hz_{0.0}, control_rate_hz_{0.0};
   float control_dt_{0.0f};
-  float des_yaw_, des_yaw_dot_;
-  float current_yaw_;
+  float des_yaw_{0.0f}, des_yaw_dot_{0.0f};
+  float current_yaw_{0.0f};
   Eigen::Quaternionf current_orientation_;
   
   /* flags */
@@ -774,6 +781,11 @@ GeometricControlNode::publishStatus()
   add("control_dt_s", num(control_dt_, 4));
 
   // Mode / failsafe
+  // Everything under "Tracking errors" and "Setpoint being tracked" below
+  // is defined-but-zero until the first setpoint arrives; this flag is
+  // what tells a panel the difference between "perfect tracking" and
+  // "nothing commanded yet" (T7).
+  add("tracking_valid", bl(have_setpoint_time_ && have_odom_));
   add("motors_enabled", bl(enable_motors_));
   add("hold_active", bl(in_hold_failsafe_));
   add("hold_enabled", bl(hold_on_setpoint_timeout_));

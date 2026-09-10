@@ -3,11 +3,26 @@
 GeometricAttitudeControl::GeometricAttitudeControl()
     : mass_(0.5),
       g_(9.81),
+      // Every state, output and error member starts defined. Before
+      // 2026-09-10 the outputs and errors were left uninitialised until
+      // the first calculateControl(), and the status publisher read them
+      // anyway -- the ground station saw pos_err 4.8e30 and a commanded
+      // tilt of 180 deg on every fresh node (T7 in ihunter_fixes/docs/
+      // TUNER_IMPROVEMENTS_PLAN.md).
+      pos_(Eigen::Vector3f::Zero()),
+      vel_(Eigen::Vector3f::Zero()),
       max_pos_int_(0.5),
       current_orientation_q_(Eigen::Quaternionf::Identity()),
+      current_orientation_vec_(Eigen::Vector4f(0.0f, 0.0f, 0.0f, 1.0f)),
       cos_max_tilt_angle_(-1.0),
       max_accel_(10.0),
+      force_(Eigen::Vector3f::Zero()),
+      orientation_(Eigen::Quaternionf::Identity()),
+      angular_velocity_(Eigen::Vector3f::Zero()),
       pos_int_(Eigen::Vector3f::Zero()),
+      pos_err_(Eigen::Vector3f::Zero()),
+      vel_err_(Eigen::Vector3f::Zero()),
+      att_err_(Eigen::Vector3f::Zero()),
       velocity_yaw_(false),
       yaw_gain_(0.3),
       yawctrl_tau_(0.0),

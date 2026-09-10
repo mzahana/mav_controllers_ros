@@ -1,7 +1,7 @@
 import os
 import launch
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -38,32 +38,49 @@ def generate_launch_description():
         description='Namespace of the mavros node'
     )
 
-    # Node configuration
-    geometric_to_mavros_node = Node(
-        package='mav_controllers_ros',
-        executable='geometric_mavros_node',
-        name='geometric_mavros_node',
-        namespace=LaunchConfiguration('mavros_ns'),
-        output='screen',
-        # The override file, when present, is listed AFTER the shipped
-        # config so its values win (gain_saver writes it on the vehicle).
-        parameters=([LaunchConfiguration('param_file')] +
-                    ([override_path('geometric_mavros.override.yaml')]
-                     if override_path('geometric_mavros.override.yaml') else [])),
-        remappings=[
-            ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'), # pub
-            ('geometric_mavros/combined_odometry', 'geometric_controller/odom'), # pub
-            ('geometric_mavros/odom', 'geometric_mavros/odom'), # sub
-            ('geometric_mavros/imu', 'mavros/imu/data'), # sub
-            ('mavros/state', 'mavros/state'), # sub
-            ('geometric_mavros/pose', 'mavros/local_position/pose'), # sub
-            ('geometric_mavros/twist', 'mavros/local_position/velocity_local'), # sub
-        ]
+    # Declared here, resolved inside make_node: an empty value must mean
+    # "no file" rather than a parameter file named ''.
+    session_params_arg = DeclareLaunchArgument(
+        'session_params',
+        default_value='',
+        description='Optional YAML loaded AFTER the shipped config and the '
+                    'persisted override, for parameters one launch needs to '
+                    'pin for the duration of a flight (e.g. the tuner '
+                    'forcing enable_thrust_estimator off). Never persisted.'
     )
+
+    def make_node(context):
+        session = LaunchConfiguration('session_params').perform(context).strip()
+        # Load order is precedence: shipped config, then the persisted
+        # override, then the session file -- so a session pin wins over
+        # both without touching what is persisted on the vehicle.
+        params = [LaunchConfiguration('param_file')]
+        if override_path('geometric_mavros.override.yaml'):
+            params.append(override_path('geometric_mavros.override.yaml'))
+        if session:
+            params.append(session)
+        return [Node(
+            package='mav_controllers_ros',
+            executable='geometric_mavros_node',
+            name='geometric_mavros_node',
+            namespace=LaunchConfiguration('mavros_ns'),
+            output='screen',
+            parameters=params,
+            remappings=[
+                ('mavros/attitude_target', 'mavros/setpoint_raw/attitude'), # pub
+                ('geometric_mavros/combined_odometry', 'geometric_controller/odom'), # pub
+                ('geometric_mavros/odom', 'geometric_mavros/odom'), # sub
+                ('geometric_mavros/imu', 'mavros/imu/data'), # sub
+                ('mavros/state', 'mavros/state'), # sub
+                ('geometric_mavros/pose', 'mavros/local_position/pose'), # sub
+                ('geometric_mavros/twist', 'mavros/local_position/velocity_local'), # sub
+            ]
+        )]
 
     return LaunchDescription([
         param_file_arg,
         ns_arg,
-        geometric_to_mavros_node,
+        session_params_arg,
+        OpaqueFunction(function=make_node),
         LogInfo(msg=["Launching geometric_mavros_node with parameters from: ", LaunchConfiguration('param_file')]),
     ])

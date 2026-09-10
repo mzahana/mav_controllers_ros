@@ -283,6 +283,13 @@ SE3ControllerToMavros::SE3ControllerToMavros(): Node("se3controller_mavros_node"
     RCLCPP_INFO(this->get_logger(),
                 "Thrust-scale estimator ON: mass=%.3f kg, tau=%.1f s, clamp=[%.2f, %.2f]",
                 vehicle_mass_, thrust_est_tau_, thrust_est_min_, thrust_est_max_);
+  else
+    // Said out loud on purpose: a tuning launch pins the estimator off
+    // (tuner_session_overrides.yaml, T5) and the operator should see that
+    // it took -- an invisible OFF looks identical to a broken estimator.
+    RCLCPP_INFO(this->get_logger(),
+                "Thrust-scale estimator OFF: max_thrust is used as configured and "
+                "thrust_scale_estimate will not be published");
 
   odom_set_ = false;
   imu_set_ = false;
