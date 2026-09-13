@@ -41,10 +41,24 @@ Parameters
       the save response says so: an override nothing loads looks like it
       worked and is worse than no persistence at all.
 
+  controller_config_file, mavros_config_file (string)
+      The shipped config each node was launched with. Read only to recover a
+      session-pinned parameter's configured value (below).
+  controller_session_file, mavros_session_file (string)
+      A per-launch pin file loaded AFTER the config and the override (e.g. the
+      tuning launch forcing enable_thrust_estimator false for its session).
+
 The parameters listed in CONTROLLER_KEYS / MAVROS_KEYS are written -- the FULL
 set each shipped config file carries, so an override reads as a complete,
 self-contained copy of the config it replaces. A key the running node does not
 declare (an older build) is skipped rather than written as null.
+
+Session pins are the one exception to "write the live value". A parameter the
+session file sets is live only for that launch; saving its live value would
+make the pin permanent -- after a tuning flight, the thrust estimator would be
+off for every flight after it, silently. For those keys the file gets the
+value the vehicle is CONFIGURED with: the existing override's, else the shipped
+config's (the same precedence the launch applies without the pin).
 """
 
 import os
@@ -99,6 +113,32 @@ MAVROS_KEYS = [
 ]
 
 
+def flatten(tree: dict, prefix: str = "") -> dict:
+    """{'gains': {'kx': {'x': 1.0}}} -> {'gains.kx.x': 1.0}"""
+    out: dict = {}
+    for key, value in (tree or {}).items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            out.update(flatten(value, name + "."))
+        else:
+            out[name] = value
+    return out
+
+
+def params_in_file(path: str) -> dict:
+    """Flattened ros__parameters of every node entry in a parameter YAML,
+    later entries winning. {} for an empty path or a missing file."""
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path) as f:
+        doc = yaml.safe_load(f) or {}
+    out: dict = {}
+    for entry in doc.values():
+        if isinstance(entry, dict) and isinstance(entry.get("ros__parameters"), dict):
+            out.update(flatten(entry["ros__parameters"]))
+    return out
+
+
 def unflatten(flat: dict) -> dict:
     """{'gains.kx.x': 1.0} -> {'gains': {'kx': {'x': 1.0}}}, matching the
     nesting of the shipped config files so an override reads like them."""
@@ -124,6 +164,9 @@ class GainSaver(Node):
         # gone the next time the container is recreated.
         self.declare_parameter("output_dir", "")
         self.declare_parameter("keep_backups", 10)
+        for which in ("controller", "mavros"):
+            self.declare_parameter(f"{which}_config_file", "")
+            self.declare_parameter(f"{which}_session_file", "")
 
         self.controller_node = str(self.get_parameter("controller_node").value).strip("/")
         self.mavros_node = str(self.get_parameter("mavros_node").value).strip("/")
@@ -264,6 +307,31 @@ class GainSaver(Node):
                 raise RuntimeError(f"parameter {key} has unsupported type {pv.type}")
         return out
 
+    def _unpin(self, flat, which, override_path):
+        """Replace session-pinned live values by their configured values."""
+        session = params_in_file(str(self.get_parameter(f"{which}_session_file").value))
+        if not session:
+            return []
+        configured = params_in_file(str(self.get_parameter(f"{which}_config_file").value))
+        configured.update(params_in_file(override_path))
+        notes = []
+        for key in sorted(session):
+            if key not in flat:
+                continue
+            live = flat[key]
+            if key in configured:
+                flat[key] = configured[key]
+                if live != configured[key]:
+                    notes.append(f"{key} saved as its configured {configured[key]!r}, not the "
+                                 f"live {live!r} this launch pins")
+            else:
+                # No configured value anywhere: writing the pin would make it
+                # permanent, so leave the key to the node's default.
+                del flat[key]
+                notes.append(f"{key} not saved: pinned by this launch and not configured "
+                             "anywhere else")
+        return notes
+
     def _write_atomic(self, path, node_name, flat):
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
@@ -350,6 +418,16 @@ class GainSaver(Node):
         output_dir = self._current_output_dir()
         ctrl_path = os.path.join(output_dir, "geometric_controller.override.yaml")
         mav_path = os.path.join(output_dir, "geometric_mavros.override.yaml")
+        # Before the writes: the configured value of a pinned key is read from
+        # the override about to be replaced.
+        try:
+            notes += self._unpin(ctrl, "controller", ctrl_path)
+            notes += self._unpin(mav, "mavros", mav_path)
+        except (OSError, yaml.YAMLError) as exc:
+            response.success = False
+            response.message = (f"Save refused: could not read the config or session file "
+                                f"to keep session-pinned parameters out of the save: {exc}")
+            return response
         try:
             self._write_atomic(ctrl_path, self.controller_node, ctrl)
             self._write_atomic(mav_path, self.mavros_node, mav)

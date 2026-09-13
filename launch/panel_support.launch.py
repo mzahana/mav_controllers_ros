@@ -54,9 +54,23 @@ def generate_launch_description():
             description='Initial shape (empty keeps the YAML value). The panel '
                         'can change it at any time while the node is holding.'),
 
+        # Which files each node was launched with, so gain_saver can keep a
+        # per-launch pin (the tuner's thrust-estimator switch) out of the
+        # persisted override. Empty in stacks without session pins.
+        DeclareLaunchArgument('controller_config_file', default_value=''),
+        DeclareLaunchArgument('mavros_config_file', default_value=''),
+        DeclareLaunchArgument('controller_session_file', default_value=''),
+        DeclareLaunchArgument('mavros_session_file', default_value=''),
+
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(pkg, 'launch', 'gain_saver.launch.py')),
-            launch_arguments={'controller_ns': LaunchConfiguration('controller_ns')}.items(),
+            launch_arguments={
+                'controller_ns': LaunchConfiguration('controller_ns'),
+                'controller_config_file': LaunchConfiguration('controller_config_file'),
+                'mavros_config_file': LaunchConfiguration('mavros_config_file'),
+                'controller_session_file': LaunchConfiguration('controller_session_file'),
+                'mavros_session_file': LaunchConfiguration('mavros_session_file'),
+            }.items(),
             condition=IfCondition(LaunchConfiguration('gain_saver')),
         ),
 
