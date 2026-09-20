@@ -279,6 +279,11 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  # ROS-free unit tests of the controller library.
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_tilt_limit test/test_tilt_limit.cpp)
+  target_link_libraries(test_tilt_limit geometric_controller)
 endif()
 
 ament_package()
