@@ -209,7 +209,11 @@ Eigen::Vector3f GeometricAttitudeControl::controlPosition(const Eigen::Vector3f 
     lambda = -g_ / (z - std::sqrt(x * x + y * y) * cot_max_tilt_angle);
     if(lambda > 0 && lambda <= 1)
     {
-      a_des = lambda * acc_control + gravity_vec_;
+      // gravity_vec_ points DOWN, so the thrust axis is acc - gravity_vec_.
+      // This line used to ADD it, which pointed the commanded thrust at the
+      // ground whenever the limiter engaged (field flight 2026-09-20; see
+      // test/test_tilt_limit.cpp).
+      a_des = lambda * acc_control - gravity_vec_;
       saturated_ = true;  // tilt limit active -> hold the integrator
     }
   }
